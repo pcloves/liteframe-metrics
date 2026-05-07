@@ -1,0 +1,25 @@
+# 基础健康告警规则
+groups:
+  - name: vm-health
+    rules:
+      - alert: VMStorageDown
+        expr: up{job="vmstorage"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vmstorage {{ $labels.instance }} is down"
+      - alert: VMInsertDown
+        expr: up{job="vminsert"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vminsert {{ $labels.instance }} is down"
+      - alert: VMSelectDown
+        expr: up{job="vmselect"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vmselect {{ $labels.instance }} is down"

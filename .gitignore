@@ -1,0 +1,25 @@
+# 所有服务运行时数据目录
+**/data/
+
+# Grafana 运行时
+grafana/plugins/
+
+# 环境变量（实际值）
+.env
+
+# vmauth 生成产物
+vmauth/auth.yaml
+vmauth/auth.d/*.yaml
+!vmauth/auth.d/_*.yaml
+
+# 操作系统
+Thumbs.db
+.DS_Store
+
+# 编辑器
+*.swp
+*.swo
+*~
+
+# jetbrains
+.idea
