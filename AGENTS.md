@@ -35,7 +35,7 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Setup Keycloak base config | `bash scripts/manage.sh kc setup` |
 | Setup admin org | `bash scripts/manage.sh org add --main` |
 | Add tenant org + group | `bash scripts/manage.sh org add <org-name> <account_id> <display_name>` |
-| Add tenant user | `bash scripts/manage.sh user add <org-name> <username> <password> <role> <email>` (role: admin/editor/viewer/grafanaAdmin) |
+| Add/update tenant user | `bash scripts/manage.sh user add <org-name> <username> <password> <role> <email>` (role: admin/editor/viewer/grafanaAdmin; replaces previous Grafana role group) |
 | Disable tenant user | `bash scripts/manage.sh user delete <username>` (re-enable in Keycloak) |
 | Delete tenant user | `bash scripts/manage.sh user delete <username> --force` |
 | Sync OAuth mappings | `bash scripts/manage.sh oauth sync` |
@@ -47,6 +47,8 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Import tenant dashboards into all tenant orgs | `bash scripts/manage.sh dashboard import --all-tenants [--overwrite]` |
 
 **Order matters** for new tenants: `bash scripts/manage.sh org add ...` first (creates org + datasource + dashboards), then `bash scripts/manage.sh user add ...`.
+
+`user add` is an idempotent upsert: it ensures the Keycloak user exists, ensures membership in the target org group, and replaces any previous Grafana role group. `viewer` means no `role-*` group, so switching an existing admin/editor user to viewer removes the old role group.
 
 All management commands write timestamped logs to `logs/manage-YYYYMMDD.log` and print the same operational progress in the terminal.
 

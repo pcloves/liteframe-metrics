@@ -96,6 +96,12 @@ kc_assign_user_group() {
   log_info "Assigned user to ${label}"
 }
 
+kc_remove_user_group() {
+  local user_id=$1 group_id=$2 label=$3
+  http_delete "${KC_URL}/admin/realms/${REALM}/users/${user_id}/groups/${group_id}" "$(kc_admin_header)" >/dev/null
+  log_info "Removed user from ${label}"
+}
+
 kc_disable_user() {
   local user_id=$1 username=$2
   local user_json payload

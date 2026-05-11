@@ -40,6 +40,9 @@ Usage:
 
 Roles:
   grafanaAdmin | admin | editor | viewer
+
+Notes:
+  user add is idempotent: it creates/updates the user and replaces any existing Grafana role group.
 EOF
 }
 
@@ -61,7 +64,7 @@ cmd_kc_setup() {
 cmd_user_add() {
   [ $# -eq 5 ] || { usage; exit 1; }
   local org_name=$1 username=$2 password=$3 role=$4 email=$5
-  local group_name group_id role_group_name role_group_id user_id
+  local group_name group_id role_group_name role_group_id user_id existing_role_group existing_role_group_id
 
   case "${role}" in
     grafanaAdmin|admin|editor|viewer) ;;
@@ -91,8 +94,16 @@ cmd_user_add() {
   log_step "Add user ${username} to ${group_name}"
   user_id="$(kc_ensure_user "${username}" "${password}" "${email}")"
   kc_assign_user_group "${user_id}" "${group_id}" "${group_name}"
+  log_step "Set Grafana role for ${username} to ${role}"
+  for existing_role_group in role-grafanaAdmin role-admin role-editor; do
+    existing_role_group_id="$(kc_get_group_id "${existing_role_group}")"
+    [ -n "${existing_role_group_id}" ] || continue
+    kc_remove_user_group "${user_id}" "${existing_role_group_id}" "${existing_role_group}" || true
+  done
   if [ -n "${role_group_id}" ]; then
     kc_assign_user_group "${user_id}" "${role_group_id}" "${role_group_name}"
+  else
+    log_info "User role is viewer; no role-* group assigned"
   fi
   log_ok "User ${username} ready"
 }
