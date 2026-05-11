@@ -30,8 +30,11 @@ Usage:
   bash scripts/manage.sh kc setup
   bash scripts/manage.sh org add --main
   bash scripts/manage.sh org add <org-name> <account-id> <display-name>
-  bash scripts/manage.sh user add <org-name> <username> <password> <role> <email>
+  bash scripts/manage.sh org user add <org-name> <username>
+  bash scripts/manage.sh org user delete <org-name> <username>
+  bash scripts/manage.sh user add <username> <password> <email> <role>
   bash scripts/manage.sh user delete <username> [--force]
+  bash scripts/manage.sh user groups <username>
   bash scripts/manage.sh oauth sync
   bash scripts/manage.sh dashboard import <org-name> [--grafana-name <name>] [--overwrite]
   bash scripts/manage.sh dashboard import --main [--overwrite]
@@ -43,6 +46,8 @@ Roles:
 
 Notes:
   user add is idempotent: it creates/updates the user and replaces any existing Grafana role group.
+  org user add/delete manages Keycloak org group membership separately from user role.
+  <org-name> is the internal org key, not the Grafana display name.
 EOF
 }
 
@@ -62,9 +67,9 @@ cmd_kc_setup() {
 }
 
 cmd_user_add() {
-  [ $# -eq 5 ] || { usage; exit 1; }
-  local org_name=$1 username=$2 password=$3 role=$4 email=$5
-  local group_name group_id role_group_name role_group_id user_id existing_role_group existing_role_group_id
+  [ $# -eq 4 ] || { usage; exit 1; }
+  local username=$1 password=$2 email=$3 role=$4
+  local role_group_name role_group_id user_id existing_role_group existing_role_group_id
 
   case "${role}" in
     grafanaAdmin|admin|editor|viewer) ;;
@@ -73,10 +78,6 @@ cmd_user_add() {
 
   load_runtime
   kc_get_admin_token
-
-  group_name="$(kc_group_name_for_org "${org_name}")"
-  group_id="$(kc_get_group_id "${group_name}")"
-  [ -n "${group_id}" ] || die "Group ${group_name} not found. Run: bash scripts/manage.sh org add ${org_name} <account-id> <display-name>"
 
   role_group_name=""
   case "${role}" in
@@ -91,9 +92,8 @@ cmd_user_add() {
     [ -n "${role_group_id}" ] || log_warn "Role group ${role_group_name} not found; role assignment skipped"
   fi
 
-  log_step "Add user ${username} to ${group_name}"
+  log_step "Add/update user ${username}"
   user_id="$(kc_ensure_user "${username}" "${password}" "${email}")"
-  kc_assign_user_group "${user_id}" "${group_id}" "${group_name}"
   log_step "Set Grafana role for ${username} to ${role}"
   for existing_role_group in role-grafanaAdmin role-admin role-editor; do
     existing_role_group_id="$(kc_get_group_id "${existing_role_group}")"
@@ -106,6 +106,54 @@ cmd_user_add() {
     log_info "User role is viewer; no role-* group assigned"
   fi
   log_ok "User ${username} ready"
+}
+
+cmd_org_user_add() {
+  [ $# -eq 2 ] || { usage; exit 1; }
+  local org_name=$1 username=$2 group_name group_id user_id
+
+  load_runtime
+  kc_get_admin_token
+
+  group_name="$(kc_group_name_for_org "${org_name}")"
+  group_id="$(kc_get_group_id "${group_name}")"
+  [ -n "${group_id}" ] || die "Group ${group_name} not found. Run: bash scripts/manage.sh org add ${org_name} <account-id> <display-name>"
+  user_id="$(kc_get_user_id "${username}")"
+  [ -n "${user_id}" ] || die "User ${username} not found. Run: bash scripts/manage.sh user add ${username} <password> <email> <role>"
+
+  log_step "Add user ${username} to org group ${group_name}"
+  kc_assign_user_group "${user_id}" "${group_id}" "${group_name}"
+  log_ok "User ${username} is in org group ${group_name}"
+}
+
+cmd_org_user_delete() {
+  [ $# -eq 2 ] || { usage; exit 1; }
+  local org_name=$1 username=$2 group_name group_id user_id
+
+  load_runtime
+  kc_get_admin_token
+
+  group_name="$(kc_group_name_for_org "${org_name}")"
+  group_id="$(kc_get_group_id "${group_name}")"
+  [ -n "${group_id}" ] || die "Group ${group_name} not found"
+  user_id="$(kc_get_user_id "${username}")"
+  [ -n "${user_id}" ] || die "User ${username} not found"
+
+  log_step "Remove user ${username} from org group ${group_name}"
+  kc_remove_user_group "${user_id}" "${group_id}" "${group_name}" || true
+  log_ok "User ${username} removed from org group ${group_name}"
+}
+
+cmd_user_groups() {
+  [ $# -eq 1 ] || { usage; exit 1; }
+  local username=$1 user_id
+
+  load_runtime
+  kc_get_admin_token
+  user_id="$(kc_get_user_id "${username}")"
+  [ -n "${user_id}" ] || die "User ${username} not found"
+
+  kc_list_user_groups "${user_id}" | jq -r '.[].name' | sort
 }
 
 cmd_user_delete() {
@@ -316,7 +364,8 @@ Keycloak admin:    ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}
 
 Add a tenant:
   bash scripts/manage.sh org add org-test 10 测试组织
-  bash scripts/manage.sh user add org-test alice passA admin alice@example.com
+  bash scripts/manage.sh user add alice passA alice@example.com admin
+  bash scripts/manage.sh org user add org-test alice
 EOF
 }
 
@@ -332,7 +381,8 @@ cmd_init() {
   kc_setup_base
   wait_for_grafana
   cmd_org_add --main
-  cmd_user_add main "${GF_ADMIN_USER}" "${GF_ADMIN_PASS}" grafanaAdmin "${KC_ADMIN_EMAIL}"
+  cmd_user_add "${GF_ADMIN_USER}" "${GF_ADMIN_PASS}" "${KC_ADMIN_EMAIL}" grafanaAdmin
+  cmd_org_user_add main "${GF_ADMIN_USER}"
   cmd_oauth_sync
   verify_jwt
   print_summary
@@ -351,14 +401,24 @@ main() {
       cmd_kc_setup "$@"
       ;;
     org)
-      [ "${1:-}" = "add" ] || { usage; exit 1; }
-      shift
-      cmd_org_add "$@"
+      case "${1:-}" in
+        add) shift; cmd_org_add "$@" ;;
+        user)
+          shift
+          case "${1:-}" in
+            add) shift; cmd_org_user_add "$@" ;;
+            delete) shift; cmd_org_user_delete "$@" ;;
+            *) usage; exit 1 ;;
+          esac
+          ;;
+        *) usage; exit 1 ;;
+      esac
       ;;
     user)
       case "${1:-}" in
         add) shift; cmd_user_add "$@" ;;
         delete) shift; cmd_user_delete "$@" ;;
+        groups) shift; cmd_user_groups "$@" ;;
         *) usage; exit 1 ;;
       esac
       ;;

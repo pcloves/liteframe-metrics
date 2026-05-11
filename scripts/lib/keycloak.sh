@@ -76,7 +76,7 @@ kc_set_group_attribute() {
 
 kc_ensure_user() {
   local username=$1 password=$2 email=$3
-  local user_id payload
+  local user_id user_json payload
   user_id="$(kc_get_user_id "${username}")"
   if [ -z "${user_id}" ]; then
     payload="$(jq -n --arg u "${username}" --arg e "${email}" --arg p "${password}" \
@@ -86,6 +86,13 @@ kc_ensure_user() {
     log_info "Created Keycloak user ${username}"
   else
     log_info "Keycloak user ${username} already exists"
+    user_json="$(http_get "${KC_URL}/admin/realms/${REALM}/users/${user_id}" "$(kc_admin_header)")"
+    payload="$(printf '%s' "${user_json}" | jq --arg e "${email}" '.email = $e | .emailVerified = true | .enabled = true')"
+    http_put_json "${KC_URL}/admin/realms/${REALM}/users/${user_id}" "${payload}" "$(kc_admin_header)" >/dev/null
+    http_put_json "${KC_URL}/admin/realms/${REALM}/users/${user_id}/reset-password" \
+      "$(jq -n --arg p "${password}" '{type: "password", value: $p, temporary: false}')" \
+      "$(kc_admin_header)" >/dev/null
+    log_info "Updated Keycloak user ${username}"
   fi
   printf '%s' "${user_id}"
 }
@@ -100,6 +107,11 @@ kc_remove_user_group() {
   local user_id=$1 group_id=$2 label=$3
   http_delete "${KC_URL}/admin/realms/${REALM}/users/${user_id}/groups/${group_id}" "$(kc_admin_header)" >/dev/null
   log_info "Removed user from ${label}"
+}
+
+kc_list_user_groups() {
+  local user_id=$1
+  http_get "${KC_URL}/admin/realms/${REALM}/users/${user_id}/groups" "$(kc_admin_header)"
 }
 
 kc_disable_user() {

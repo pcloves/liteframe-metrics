@@ -35,7 +35,10 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Setup Keycloak base config | `bash scripts/manage.sh kc setup` |
 | Setup admin org | `bash scripts/manage.sh org add --main` |
 | Add tenant org + group | `bash scripts/manage.sh org add <org-name> <account_id> <display_name>` |
-| Add/update tenant user | `bash scripts/manage.sh user add <org-name> <username> <password> <role> <email>` (role: admin/editor/viewer/grafanaAdmin; replaces previous Grafana role group) |
+| Add/update user | `bash scripts/manage.sh user add <username> <password> <email> <role>` (role: admin/editor/viewer/grafanaAdmin; replaces previous Grafana role group) |
+| Add user to org | `bash scripts/manage.sh org user add <org-name> <username>` |
+| Remove user from org | `bash scripts/manage.sh org user delete <org-name> <username>` |
+| List user groups | `bash scripts/manage.sh user groups <username>` |
 | Disable tenant user | `bash scripts/manage.sh user delete <username>` (re-enable in Keycloak) |
 | Delete tenant user | `bash scripts/manage.sh user delete <username> --force` |
 | Sync OAuth mappings | `bash scripts/manage.sh oauth sync` |
@@ -46,9 +49,9 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Import platform dashboards into main org | `bash scripts/manage.sh dashboard import --main [--overwrite]` |
 | Import tenant dashboards into all tenant orgs | `bash scripts/manage.sh dashboard import --all-tenants [--overwrite]` |
 
-**Order matters** for new tenants: `bash scripts/manage.sh org add ...` first (creates org + datasource + dashboards), then `bash scripts/manage.sh user add ...`.
+**Order matters** for new tenants: `bash scripts/manage.sh org add ...` first (creates org + datasource + dashboards), then `bash scripts/manage.sh user add ...`, then `bash scripts/manage.sh org user add ...`.
 
-`user add` is an idempotent upsert: it ensures the Keycloak user exists, ensures membership in the target org group, and replaces any previous Grafana role group. `viewer` means no `role-*` group, so switching an existing admin/editor user to viewer removes the old role group.
+`user add` is an idempotent upsert for user identity and Grafana role only: it ensures the Keycloak user exists, syncs email/password, and replaces any previous Grafana role group. `viewer` means no `role-*` group, so switching an existing admin/editor user to viewer removes the old role group. Org membership is Keycloak group membership managed separately via `org user add/delete`.
 
 All management commands write timestamped logs to `logs/manage-YYYYMMDD.log` and print the same operational progress in the terminal.
 
@@ -89,5 +92,5 @@ Types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`, `style`, `ci`
 - Grafana datasource `vmauth-cluster` (uid `vmauth-cluster`) is created per-org by `scripts/manage.sh org add` using Basic Auth (per-org credentials → vmauth → tenant-scoped Prometheus). Dashboard imports normalize datasource references to this UID.
 - Main Org is the platform/admin observability org. It imports `grafana/dashboards/platform/` only; tenant orgs import `grafana/dashboards/tenants/` only.
 - Dashboard UIDs are suffixed with the Keycloak group name (`org-main`, `org-test`, etc.) to keep Grafana dashboard identity aligned with OAuth group mapping.
-- Admin user is created via the same flow as tenant users: `scripts/manage.sh org add --main` then `scripts/manage.sh user add main admin <pass> grafanaAdmin <email>`. The `org-main` group maps to `Main Org.` in Grafana, and `role-grafanaAdmin` grants the Grafana server admin role.
+- Admin user is created via the same flow as tenant users: `scripts/manage.sh org add --main`, `scripts/manage.sh user add admin <pass> <email> grafanaAdmin`, then `scripts/manage.sh org user add main admin`. The `org-main` group maps to `Main Org.` in Grafana, and `role-grafanaAdmin` grants the Grafana server admin role.
 - Alertmanager has no receiver configured (routes to `blackhole`). Configure a real receiver before expecting alerts.
