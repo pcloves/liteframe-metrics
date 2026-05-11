@@ -57,6 +57,8 @@ All management commands write timestamped logs to `logs/manage-YYYYMMDD.log` and
 
 **Org naming:** The first parameter `<org-name>` is the internal English name (used for vmauth auth, KC group name, dashboard UID suffix). The third parameter `<display_name>` is the Grafana org display name (can be Chinese). OAuth org mapping uses Grafana org ID (immutable), so renaming the org in Grafana UI won't break auth.
 
+**Main Org mapping:** Grafana built-in `Main Org.` (org ID `1`) is fixed to Keycloak group `org-main`. `org add --main` is the only user-facing command that uses `--main`; all membership commands should use the internal group key `org-main`, for example `bash scripts/manage.sh org user add org-main admin`.
+
 ## File layout
 
 | Path | Purpose |
@@ -92,5 +94,5 @@ Types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`, `style`, `ci`
 - Grafana datasource `vmauth-cluster` (uid `vmauth-cluster`) is created per-org by `scripts/manage.sh org add` using Basic Auth (per-org credentials → vmauth → tenant-scoped Prometheus). Dashboard imports normalize datasource references to this UID.
 - Main Org is the platform/admin observability org. It imports `grafana/dashboards/platform/` only; tenant orgs import `grafana/dashboards/tenants/` only.
 - Dashboard UIDs are suffixed with the Keycloak group name (`org-main`, `org-test`, etc.) to keep Grafana dashboard identity aligned with OAuth group mapping.
-- Admin user is created via the same flow as tenant users: `scripts/manage.sh org add --main`, `scripts/manage.sh user add admin <pass> <email> grafanaAdmin`, then `scripts/manage.sh org user add main admin`. The `org-main` group maps to `Main Org.` in Grafana, and `role-grafanaAdmin` grants the Grafana server admin role.
+- Admin user is created via the same flow as tenant users: `scripts/manage.sh org add --main`, `scripts/manage.sh user add admin <pass> <email> grafanaAdmin`, then `scripts/manage.sh org user add org-main admin`. The `org-main` group maps to `Main Org.` in Grafana, and `role-grafanaAdmin` grants the Grafana server admin role.
 - Alertmanager has no receiver configured (routes to `blackhole`). Configure a real receiver before expecting alerts.
