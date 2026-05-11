@@ -12,6 +12,9 @@ vmauth/auth.yaml
 vmauth/auth.d/*.yaml
 !vmauth/auth.d/_*.yaml
 
+# 脚本运行日志
+logs/
+
 # 操作系统
 Thumbs.db
 .DS_Store

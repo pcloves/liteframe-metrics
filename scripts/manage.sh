@@ -1,0 +1,326 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/env.sh
+source "${SCRIPT_DIR}/lib/env.sh"
+# shellcheck source=lib/http.sh
+source "${SCRIPT_DIR}/lib/http.sh"
+# shellcheck source=lib/keycloak.sh
+source "${SCRIPT_DIR}/lib/keycloak.sh"
+# shellcheck source=lib/grafana.sh
+source "${SCRIPT_DIR}/lib/grafana.sh"
+# shellcheck source=lib/vmauth.sh
+source "${SCRIPT_DIR}/lib/vmauth.sh"
+# shellcheck source=lib/dashboards.sh
+source "${SCRIPT_DIR}/lib/dashboards.sh"
+# shellcheck source=lib/docker.sh
+source "${SCRIPT_DIR}/lib/docker.sh"
+
+log_init
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash scripts/manage.sh init
+  bash scripts/manage.sh kc setup
+  bash scripts/manage.sh org add --main
+  bash scripts/manage.sh org add <org-name> <account-id> <display-name>
+  bash scripts/manage.sh user add <org-name> <username> <password> <role> <email>
+  bash scripts/manage.sh user delete <username> [--force]
+  bash scripts/manage.sh oauth sync
+  bash scripts/manage.sh dashboard import <org-name> [--grafana-name <name>] [--overwrite]
+  bash scripts/manage.sh dashboard import --main [--overwrite]
+  bash scripts/manage.sh auth generate
+
+Roles:
+  grafanaAdmin | admin | editor | viewer
+EOF
+}
+
+load_runtime() {
+  load_env
+}
+
+cmd_auth_generate() {
+  load_runtime
+  vmauth_generate_auth
+}
+
+cmd_kc_setup() {
+  load_runtime
+  require_bootstrap_env
+  kc_setup_base
+}
+
+cmd_user_add() {
+  [ $# -eq 5 ] || { usage; exit 1; }
+  local org_name=$1 username=$2 password=$3 role=$4 email=$5
+  local group_name group_id role_group_name role_group_id user_id
+
+  case "${role}" in
+    grafanaAdmin|admin|editor|viewer) ;;
+    *) die "role must be grafanaAdmin, admin, editor, or viewer" ;;
+  esac
+
+  load_runtime
+  kc_get_admin_token
+
+  group_name="$(kc_group_name_for_org "${org_name}")"
+  group_id="$(kc_get_group_id "${group_name}")"
+  [ -n "${group_id}" ] || die "Group ${group_name} not found. Run: bash scripts/manage.sh org add ${org_name} <account-id> <display-name>"
+
+  role_group_name=""
+  case "${role}" in
+    grafanaAdmin) role_group_name="role-grafanaAdmin" ;;
+    admin) role_group_name="role-admin" ;;
+    editor) role_group_name="role-editor" ;;
+  esac
+
+  role_group_id=""
+  if [ -n "${role_group_name}" ]; then
+    role_group_id="$(kc_get_group_id "${role_group_name}")"
+    [ -n "${role_group_id}" ] || log_warn "Role group ${role_group_name} not found; role assignment skipped"
+  fi
+
+  log_step "Add user ${username} to ${group_name}"
+  user_id="$(kc_ensure_user "${username}" "${password}" "${email}")"
+  kc_assign_user_group "${user_id}" "${group_id}" "${group_name}"
+  if [ -n "${role_group_id}" ]; then
+    kc_assign_user_group "${user_id}" "${role_group_id}" "${role_group_name}"
+  fi
+  log_ok "User ${username} ready"
+}
+
+cmd_user_delete() {
+  [ $# -ge 1 ] || { usage; exit 1; }
+  local username=$1 force=false user_id
+  if [ "${2:-}" = "--force" ]; then
+    force=true
+  elif [ $# -gt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  load_runtime
+  kc_get_admin_token
+  user_id="$(kc_get_user_id "${username}")"
+  [ -n "${user_id}" ] || die "User ${username} not found"
+
+  if [ "${force}" = true ]; then
+    log_step "Delete user ${username}"
+    kc_delete_user "${user_id}" "${username}"
+  else
+    log_step "Disable user ${username}"
+    kc_disable_user "${user_id}" "${username}"
+    log_info "Use --force to permanently delete"
+  fi
+  log_ok "User ${username} processed"
+}
+
+cmd_oauth_sync() {
+  load_runtime
+  kc_get_admin_token
+  grafana_sync_oauth_from_keycloak
+}
+
+cmd_dashboard_import() {
+  [ $# -ge 1 ] || { usage; exit 1; }
+  local is_main=false org_name grafana_org_name overwrite=false
+
+  if [ "$1" = "--main" ]; then
+    [ $# -le 2 ] || { usage; exit 1; }
+    is_main=true
+    org_name="main"
+    shift
+  else
+    org_name=$1
+    shift
+  fi
+
+  load_runtime
+  if [ "${is_main}" = true ]; then
+    grafana_org_name="$(grafana_get_org_name 1)"
+  else
+    grafana_org_name="${org_name}"
+  fi
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --grafana-name)
+        [ $# -ge 2 ] || die "--grafana-name requires a value"
+        grafana_org_name=$2
+        shift 2
+        ;;
+      --overwrite)
+        overwrite=true
+        shift
+        ;;
+      *) usage; exit 1 ;;
+    esac
+  done
+
+  dashboards_import "${org_name}" "${grafana_org_name}" "${overwrite}"
+}
+
+cmd_org_add() {
+  [ $# -ge 1 ] || { usage; exit 1; }
+  local is_main=false org_name account_id display_name group_name group_id org_id grafana_org_name org_password
+
+  if [ "$1" = "--main" ]; then
+    is_main=true
+    org_name="main"
+    account_id="${2:-0}"
+    require_number account_id "${account_id}"
+  elif [ $# -eq 3 ]; then
+    org_name=$1
+    account_id=$2
+    display_name=$3
+    require_number account_id "${account_id}"
+  else
+    usage
+    exit 1
+  fi
+
+  load_runtime
+  kc_get_admin_token
+  group_name="$(kc_group_name_for_org "${org_name}")"
+
+  log_step "Ensure org ${org_name}"
+  group_id="$(kc_ensure_group "${group_name}" "${account_id}")"
+
+  if [ "${is_main}" = true ]; then
+    org_id=1
+    grafana_org_name="$(grafana_get_org_name "${org_id}")"
+    [ -n "${grafana_org_name}" ] || grafana_org_name="Main Org."
+    log_info "Using built-in Grafana org ${grafana_org_name} (id=${org_id})"
+  else
+    grafana_org_name="${display_name}"
+    org_id="$(grafana_ensure_org "${grafana_org_name}")"
+  fi
+
+  kc_set_group_attribute "${group_id}" grafana_org_id "${org_id}"
+  log_info "Set grafana_org_id=${org_id} on group ${group_name}"
+
+  local admin_user_id
+  admin_user_id="$(kc_get_user_id "${KC_ADMIN_USER}")"
+  if [ -n "${admin_user_id}" ]; then
+    kc_assign_user_group "${admin_user_id}" "${group_id}" "${group_name}"
+  fi
+
+  grafana_ensure_admins_in_org "${org_id}" "${grafana_org_name}"
+
+  org_password="$(vmauth_org_password "${org_name}")"
+  vmauth_write_org_entry "${group_name}" "${account_id}" "${org_password}"
+  vmauth_generate_auth
+  vmauth_reload
+
+  grafana_ensure_basic_datasource "${org_id}" "${grafana_org_name}" "${group_name}" "${org_password}"
+  dashboards_import "${org_name}" "${grafana_org_name}" false
+  grafana_sync_oauth_from_keycloak
+  log_ok "Org ${org_name} ready"
+}
+
+verify_jwt() {
+  local token
+  log_step "Verify Grafana OIDC JWT"
+  token="$(curl -sS \
+    -X POST "${KC_URL}/realms/${REALM}/protocol/openid-connect/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "client_id=grafana" \
+    -d "client_secret=${GRAFANA_CLIENT_SECRET}" \
+    -d "grant_type=password" \
+    -d "username=${GF_ADMIN_USER}" \
+    -d "password=${GF_ADMIN_PASS}" | jq -r '.access_token // empty')"
+  if [ -n "${token}" ]; then
+    printf '%s' "${token}" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{username: .preferred_username, groups: .groups}' || true
+  else
+    log_warn "JWT verification skipped; token request failed"
+  fi
+}
+
+print_summary() {
+  cat <<EOF
+
+Deployment complete.
+
+Grafana:  ${GRAFANA_URL}
+Keycloak: ${KC_URL}
+vmauth:   http://${HOST_IP}:${VMAUTH_PORT:-8427}
+
+Grafana OIDC user: ${GF_ADMIN_USER} / ${GF_ADMIN_PASS}
+Keycloak admin:    ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}
+
+Add a tenant:
+  bash scripts/manage.sh org add org-test 10 测试组织
+  bash scripts/manage.sh user add org-test alice passA admin alice@example.com
+EOF
+}
+
+cmd_init() {
+  check_prerequisites
+  load_runtime
+  require_bootstrap_env
+
+  vmauth_clean_tenant_entries
+  vmauth_generate_auth
+  compose_up
+  wait_for_keycloak
+  kc_setup_base
+  wait_for_grafana
+  cmd_org_add --main
+  cmd_user_add main "${GF_ADMIN_USER}" "${GF_ADMIN_PASS}" grafanaAdmin "${KC_ADMIN_EMAIL}"
+  cmd_oauth_sync
+  verify_jwt
+  print_summary
+}
+
+main() {
+  [ $# -gt 0 ] || { usage; exit 1; }
+  local scope=$1
+  shift
+
+  case "${scope}" in
+    init) cmd_init "$@" ;;
+    kc)
+      [ "${1:-}" = "setup" ] || { usage; exit 1; }
+      shift
+      cmd_kc_setup "$@"
+      ;;
+    org)
+      [ "${1:-}" = "add" ] || { usage; exit 1; }
+      shift
+      cmd_org_add "$@"
+      ;;
+    user)
+      case "${1:-}" in
+        add) shift; cmd_user_add "$@" ;;
+        delete) shift; cmd_user_delete "$@" ;;
+        *) usage; exit 1 ;;
+      esac
+      ;;
+    oauth)
+      [ "${1:-}" = "sync" ] || { usage; exit 1; }
+      shift
+      cmd_oauth_sync "$@"
+      ;;
+    dashboard)
+      [ "${1:-}" = "import" ] || { usage; exit 1; }
+      shift
+      cmd_dashboard_import "$@"
+      ;;
+    auth)
+      [ "${1:-}" = "generate" ] || { usage; exit 1; }
+      shift
+      cmd_auth_generate "$@"
+      ;;
+    help|-h|--help) usage ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
+main "$@"
