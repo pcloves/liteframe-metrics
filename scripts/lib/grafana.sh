@@ -21,9 +21,9 @@ grafana_ensure_org() {
   if [ -z "${org_id}" ]; then
     result="$(http_post_json "${GRAFANA_URL}/api/orgs" "$(jq -n --arg name "${display_name}" '{name: $name}')" "$(grafana_header)")"
     org_id="$(printf '%s' "${result}" | jq -r '.orgId // empty')"
-    log_info "Created Grafana org ${display_name} (id=${org_id})"
+    log_info "已创建 Grafana 组织 ${display_name}（id=${org_id}）"
   else
-    log_info "Grafana org ${display_name} already exists (id=${org_id})"
+    log_info "Grafana 组织 ${display_name} 已存在（id=${org_id}）"
   fi
   printf '%s' "${org_id}"
 }
@@ -48,12 +48,12 @@ grafana_ensure_admins_in_org() {
     [ -n "${user_id}" ] || continue
     is_member="$(printf '%s' "${members}" | jq ". // [] | any(.userId == ${user_id})")"
     if [ "${is_member}" = "true" ]; then
-      log_info "Grafana user ${login} already in org ${org_name}"
+      log_info "Grafana 用户 ${login} 已在组织 ${org_name} 中"
     else
       http_post_json "${GRAFANA_URL}/api/orgs/${org_id}/users" \
         "$(jq -n --arg login "${login}" '{loginOrEmail: $login, role: "Admin"}')" \
         "$(grafana_header)" >/dev/null
-      log_info "Added Grafana user ${login} to org ${org_name} as Admin"
+      log_info "已将 Grafana 用户 ${login} 以管理员角色添加到组织 ${org_name}"
     fi
   done
 }
@@ -78,7 +78,7 @@ grafana_ensure_basic_datasource() {
   grafana_switch_org "${org_id}"
   exists="$(curl -sS "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" -H "$(grafana_header)" | jq -r '.uid // empty' 2>/dev/null || true)"
   if [ -n "${exists}" ]; then
-    log_info "Datasource ${ds_uid} already exists in org ${org_name}"
+    log_info "数据源 ${ds_uid} 已在组织 ${org_name} 中存在"
   else
     payload="$(jq -n \
       --arg name "${ds_uid}" \
@@ -88,16 +88,16 @@ grafana_ensure_basic_datasource() {
       '{name: $name, uid: $uid, type: "prometheus", url: "http://vmauth:8427/select", access: "proxy", isDefault: true, basicAuth: true, basicAuthUser: $user, secureJsonData: {basicAuthPassword: $password}}')"
     result="$(curl -sS -X POST "${GRAFANA_URL}/api/datasources" -H "$(grafana_header)" -H "Content-Type: application/json" -d "${payload}")"
     if printf '%s' "${result}" | jq -e '.datasource.id' >/dev/null 2>&1; then
-      log_info "Created datasource ${ds_uid} in org ${org_name}"
+      log_info "已在组织 ${org_name} 中创建数据源 ${ds_uid}"
     else
-      die "Failed to create datasource in org ${org_name}: $(printf '%s' "${result}" | jq -r '.message // "unknown"')"
+      die "在组织 ${org_name} 中创建数据源失败：$(printf '%s' "${result}" | jq -r '.message // "未知错误"')"
     fi
   fi
   grafana_switch_org 1
 }
 
 grafana_sync_oauth_from_keycloak() {
-  log_step "Sync Grafana OAuth mapping"
+  log_step "同步 Grafana OAuth 映射"
   local orgs_json kc_groups group group_id group_name grafana_org_id org org_id org_name mapping_entries=() mapping
   orgs_json="$(http_get "${GRAFANA_URL}/api/orgs" "$(grafana_header)")"
   kc_groups="$(http_get "${KC_URL}/admin/realms/${REALM}/groups" "$(kc_admin_header)")"
@@ -117,15 +117,15 @@ grafana_sync_oauth_from_keycloak() {
     org_name="$(printf '%s' "${org}" | jq -r '.name')"
     group_name="${kc_org_map[${org_id}]:-}"
     if [ -z "${group_name}" ]; then
-      log_warn "No Keycloak group found for Grafana org ${org_name} (id=${org_id}); skipping"
+      log_warn "未找到 Grafana 组织 ${org_name}（id=${org_id}）对应的 Keycloak 组，已跳过"
       continue
     fi
     mapping_entries+=("${group_name}:${org_id}:Viewer")
     grafana_ensure_admins_in_org "${org_id}" "${org_name}"
   done < <(printf '%s' "${orgs_json}" | jq -c '.[]')
 
-  [ ${#mapping_entries[@]} -gt 0 ] || die "No OAuth mapping entries generated"
+  [ ${#mapping_entries[@]} -gt 0 ] || die "未生成 OAuth 映射条目"
   mapping="$(IFS=' '; printf '%s' "${mapping_entries[*]}")"
   grafana_update_oauth_mapping "${mapping}"
-  log_ok "Grafana OAuth mapping synced: ${mapping}"
+  log_ok "Grafana OAuth 映射已同步：${mapping}"
 }

@@ -5,9 +5,9 @@ load_env() {
   if [ ! -f .env ]; then
     if [ -f .env.example ]; then
       cp .env.example .env
-      die ".env not found. Created from .env.example; edit it and rerun the command."
+      die ".env 文件未找到。已从 .env.example 创建，请编辑后重新运行命令。"
     fi
-    die ".env not found"
+    die ".env 文件未找到"
   fi
 
   # shellcheck disable=SC1091

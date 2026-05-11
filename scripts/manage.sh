@@ -25,7 +25,7 @@ log_init
 
 usage() {
   cat <<'EOF'
-Usage:
+用法：
   bash scripts/manage.sh init
   bash scripts/manage.sh kc setup
   bash scripts/manage.sh org add --main
@@ -41,13 +41,13 @@ Usage:
   bash scripts/manage.sh dashboard import --all-tenants [--overwrite]
   bash scripts/manage.sh auth generate
 
-Roles:
+角色：
   grafanaAdmin | admin | editor | viewer
 
-Notes:
-  user add is idempotent: it creates/updates the user and replaces any existing Grafana role group.
-  org user add/delete manages Keycloak org group membership separately from user role.
-  <org-name> is the internal org key, not the Grafana display name.
+说明：
+  user add 为幂等操作：创建/更新用户，并替换已有的 Grafana 角色组。
+  org user add/delete 管理 Keycloak group 成员身份，与用户角色分开管理。
+  <org-name> 指 Keycloak group 名称，不是 Grafana 组织显示名称。
 EOF
 }
 
@@ -73,7 +73,7 @@ cmd_user_add() {
 
   case "${role}" in
     grafanaAdmin|admin|editor|viewer) ;;
-    *) die "role must be grafanaAdmin, admin, editor, or viewer" ;;
+    *) die "角色必须是 grafanaAdmin、admin、editor 或 viewer" ;;
   esac
 
   load_runtime
@@ -89,12 +89,12 @@ cmd_user_add() {
   role_group_id=""
   if [ -n "${role_group_name}" ]; then
     role_group_id="$(kc_get_group_id "${role_group_name}")"
-    [ -n "${role_group_id}" ] || log_warn "Role group ${role_group_name} not found; role assignment skipped"
+    [ -n "${role_group_id}" ] || log_warn "角色组 ${role_group_name} 未找到，跳过角色分配"
   fi
 
-  log_step "Add/update user ${username}"
+  log_step "添加/更新用户 ${username}"
   user_id="$(kc_ensure_user "${username}" "${password}" "${email}")"
-  log_step "Set Grafana role for ${username} to ${role}"
+  log_step "设置 ${username} 的 Grafana 角色为 ${role}"
   for existing_role_group in role-grafanaAdmin role-admin role-editor; do
     existing_role_group_id="$(kc_get_group_id "${existing_role_group}")"
     [ -n "${existing_role_group_id}" ] || continue
@@ -103,9 +103,9 @@ cmd_user_add() {
   if [ -n "${role_group_id}" ]; then
     kc_assign_user_group "${user_id}" "${role_group_id}" "${role_group_name}"
   else
-    log_info "User role is viewer; no role-* group assigned"
+    log_info "用户角色为 viewer，未分配 role-* 组"
   fi
-  log_ok "User ${username} ready"
+  log_ok "用户 ${username} 已就绪"
 }
 
 cmd_org_user_add() {
@@ -117,13 +117,13 @@ cmd_org_user_add() {
 
   group_name="$(kc_group_name_for_org "${org_name}")"
   group_id="$(kc_get_group_id "${group_name}")"
-  [ -n "${group_id}" ] || die "Group ${group_name} not found. Run: bash scripts/manage.sh org add ${org_name} <account-id> <display-name>"
+  [ -n "${group_id}" ] || die "组 ${group_name} 未找到。请运行：bash scripts/manage.sh org add ${org_name} <account-id> <display-name>"
   user_id="$(kc_get_user_id "${username}")"
-  [ -n "${user_id}" ] || die "User ${username} not found. Run: bash scripts/manage.sh user add ${username} <password> <email> <role>"
+  [ -n "${user_id}" ] || die "用户 ${username} 未找到。请运行：bash scripts/manage.sh user add ${username} <password> <email> <role>"
 
-  log_step "Add user ${username} to org group ${group_name}"
+  log_step "将用户 ${username} 添加到 Keycloak group ${group_name}"
   kc_assign_user_group "${user_id}" "${group_id}" "${group_name}"
-  log_ok "User ${username} is in org group ${group_name}"
+  log_ok "用户 ${username} 已在 Keycloak group ${group_name} 中"
 }
 
 cmd_org_user_delete() {
@@ -135,13 +135,13 @@ cmd_org_user_delete() {
 
   group_name="$(kc_group_name_for_org "${org_name}")"
   group_id="$(kc_get_group_id "${group_name}")"
-  [ -n "${group_id}" ] || die "Group ${group_name} not found"
+  [ -n "${group_id}" ] || die "组 ${group_name} 未找到"
   user_id="$(kc_get_user_id "${username}")"
-  [ -n "${user_id}" ] || die "User ${username} not found"
+  [ -n "${user_id}" ] || die "用户 ${username} 未找到"
 
-  log_step "Remove user ${username} from org group ${group_name}"
+  log_step "将用户 ${username} 从 Keycloak group ${group_name} 移除"
   kc_remove_user_group "${user_id}" "${group_id}" "${group_name}" || true
-  log_ok "User ${username} removed from org group ${group_name}"
+  log_ok "用户 ${username} 已从 Keycloak group ${group_name} 移除"
 }
 
 cmd_user_groups() {
@@ -151,7 +151,7 @@ cmd_user_groups() {
   load_runtime
   kc_get_admin_token
   user_id="$(kc_get_user_id "${username}")"
-  [ -n "${user_id}" ] || die "User ${username} not found"
+  [ -n "${user_id}" ] || die "用户 ${username} 未找到"
 
   kc_list_user_groups "${user_id}" | jq -r '.[].name' | sort
 }
@@ -169,17 +169,17 @@ cmd_user_delete() {
   load_runtime
   kc_get_admin_token
   user_id="$(kc_get_user_id "${username}")"
-  [ -n "${user_id}" ] || die "User ${username} not found"
+  [ -n "${user_id}" ] || die "用户 ${username} 未找到"
 
   if [ "${force}" = true ]; then
-    log_step "Delete user ${username}"
+    log_step "删除用户 ${username}"
     kc_delete_user "${user_id}" "${username}"
   else
-    log_step "Disable user ${username}"
+    log_step "禁用用户 ${username}"
     kc_disable_user "${user_id}" "${username}"
-    log_info "Use --force to permanently delete"
+    log_info "使用 --force 参数可永久删除"
   fi
-  log_ok "User ${username} processed"
+  log_ok "用户 ${username} 操作完成"
 }
 
 cmd_oauth_sync() {
@@ -216,7 +216,7 @@ cmd_dashboard_import() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --grafana-name)
-        [ $# -ge 2 ] || die "--grafana-name requires a value"
+        [ $# -ge 2 ] || die "--grafana-name 参数需要提供值"
         grafana_org_name=$2
         shift 2
         ;;
@@ -229,7 +229,7 @@ cmd_dashboard_import() {
   done
 
   if [ "${all_tenants}" = true ] && [ -n "${grafana_org_name}" ]; then
-    die "--grafana-name cannot be used with --all-tenants"
+    die "--grafana-name 不能与 --all-tenants 同时使用"
   fi
 
   if [ "${all_tenants}" = true ]; then
@@ -261,13 +261,13 @@ dashboard_import_all_tenants() {
     grafana_org_id="$(printf '%s' "${group_json}" | jq -r '.attributes.grafana_org_id[0] // empty')"
     [ -n "${grafana_org_id}" ] || continue
     grafana_org_name="$(grafana_get_org_name "${grafana_org_id}")"
-    [ -n "${grafana_org_name}" ] || { log_warn "Grafana org id ${grafana_org_id} not found; skipping ${group_name}"; continue; }
+    [ -n "${grafana_org_name}" ] || { log_warn "Grafana 组织 ID ${grafana_org_id} 未找到，跳过 ${group_name}"; continue; }
 
     dashboards_import tenants "${group_name}" "${grafana_org_name}" "${overwrite}"
     count=$((count + 1))
   done < <(printf '%s' "${kc_groups}" | jq -c '.[]')
 
-  [ "${count}" -gt 0 ] || log_warn "No tenant orgs found for dashboard import"
+  [ "${count}" -gt 0 ] || log_warn "未找到租户组织用于导入仪表盘"
 }
 
 cmd_org_add() {
@@ -293,21 +293,21 @@ cmd_org_add() {
   kc_get_admin_token
   group_name="$(kc_group_name_for_org "${org_name}")"
 
-  log_step "Ensure org ${org_name}"
+  log_step "确保 Keycloak group ${group_name} 存在"
   group_id="$(kc_ensure_group "${group_name}" "${account_id}")"
 
   if [ "${is_main}" = true ]; then
     org_id=1
     grafana_org_name="$(grafana_get_org_name "${org_id}")"
     [ -n "${grafana_org_name}" ] || grafana_org_name="Main Org."
-    log_info "Using built-in Grafana org ${grafana_org_name} (id=${org_id})"
+    log_info "使用内置 Grafana 组织 ${grafana_org_name}（id=${org_id}）"
   else
     grafana_org_name="${display_name}"
     org_id="$(grafana_ensure_org "${grafana_org_name}")"
   fi
 
   kc_set_group_attribute "${group_id}" grafana_org_id "${org_id}"
-  log_info "Set grafana_org_id=${org_id} on group ${group_name}"
+  log_info "已设置组 ${group_name} 的 grafana_org_id=${org_id}"
 
   local admin_user_id
   admin_user_id="$(kc_get_user_id "${KC_ADMIN_USER}")"
@@ -329,12 +329,12 @@ cmd_org_add() {
     dashboards_import tenants "${group_name}" "${grafana_org_name}" false
   fi
   grafana_sync_oauth_from_keycloak
-  log_ok "Org ${org_name} ready"
+  log_ok "组织 ${grafana_org_name}（${group_name}）已就绪"
 }
 
 verify_jwt() {
   local token
-  log_step "Verify Grafana OIDC JWT"
+  log_step "验证 Grafana OIDC JWT"
   token="$(curl -sS \
     -X POST "${KC_URL}/realms/${REALM}/protocol/openid-connect/token" \
     -H "Content-Type: application/x-www-form-urlencoded" \
@@ -346,23 +346,23 @@ verify_jwt() {
   if [ -n "${token}" ]; then
     printf '%s' "${token}" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{username: .preferred_username, groups: .groups}' || true
   else
-    log_warn "JWT verification skipped; token request failed"
+    log_warn "跳过 JWT 验证，令牌请求失败"
   fi
 }
 
 print_summary() {
   cat <<EOF
 
-Deployment complete.
+部署完成。
 
-Grafana:  ${GRAFANA_URL}
-Keycloak: ${KC_URL}
-vmauth:   http://${HOST_IP}:${VMAUTH_PORT:-8427}
+Grafana：  ${GRAFANA_URL}
+Keycloak： ${KC_URL}
+vmauth：   http://${HOST_IP}:${VMAUTH_PORT:-8427}
 
-Grafana OIDC user: ${GF_ADMIN_USER} / ${GF_ADMIN_PASS}
-Keycloak admin:    ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}
+Grafana OIDC 用户：${GF_ADMIN_USER} / ${GF_ADMIN_PASS}
+Keycloak 管理员：   ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}
 
-Add a tenant:
+添加租户：
   bash scripts/manage.sh org add org-test 10 测试组织
   bash scripts/manage.sh user add alice passA alice@example.com admin
   bash scripts/manage.sh org user add org-test alice

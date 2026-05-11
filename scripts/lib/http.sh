@@ -50,10 +50,10 @@ wait_for_http_200() {
       http_code=ERR
     fi
     if [ "${http_code}" = "200" ]; then
-      log_ok "${name} ready"
+      log_ok "${name} 已就绪"
       return 0
     fi
-    log_info "Waiting for ${name} (${i}/${attempts}) HTTP=${http_code}"
+    log_info "等待 ${name}（${i}/${attempts}）HTTP=${http_code}"
     sleep "${delay}"
   done
   return 1

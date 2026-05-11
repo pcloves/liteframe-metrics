@@ -17,7 +17,7 @@ kc_admin_header() {
 
 kc_get_admin_token() {
   ADMIN_TOKEN="$(kc_token "${KC_ADMIN_USER}" "${KC_ADMIN_PASS}" || true)"
-  [ -n "${ADMIN_TOKEN}" ] || die "Unable to authenticate Keycloak admin ${KC_ADMIN_USER}"
+  [ -n "${ADMIN_TOKEN}" ] || die "无法验证 Keycloak 管理员 ${KC_ADMIN_USER}"
 }
 
 kc_group_name_for_org() {
@@ -51,16 +51,16 @@ kc_ensure_group() {
     fi
     http_post_json "${KC_URL}/admin/realms/${REALM}/groups" "${payload}" "$(kc_admin_header)" >/dev/null
     group_id="$(kc_get_group_id "${group_name}")"
-    log_info "Created Keycloak group ${group_name}"
+    log_info "已创建 Keycloak 组 ${group_name}"
   else
-    log_info "Keycloak group ${group_name} already exists"
+    log_info "Keycloak 组 ${group_name} 已存在"
   fi
 
   if [ -n "${account_id}" ]; then
     group_json="$(http_get "${KC_URL}/admin/realms/${REALM}/groups/${group_id}" "$(kc_admin_header)")"
     payload="$(printf '%s' "${group_json}" | jq --arg aid "${account_id}" '.attributes = ((.attributes // {}) + {metrics_account_id: [$aid]})')"
     http_put_json "${KC_URL}/admin/realms/${REALM}/groups/${group_id}" "${payload}" "$(kc_admin_header)" >/dev/null
-    log_info "Set metrics_account_id=${account_id} on group ${group_name}"
+    log_info "已设置组 ${group_name} 的 metrics_account_id=${account_id}"
   fi
 
   printf '%s' "${group_id}"
@@ -83,16 +83,16 @@ kc_ensure_user() {
       '{username: $u, email: $e, emailVerified: true, enabled: true, firstName: $u, lastName: "-", credentials: [{type: "password", value: $p, temporary: false}]}')"
     http_post_json "${KC_URL}/admin/realms/${REALM}/users" "${payload}" "$(kc_admin_header)" >/dev/null
     user_id="$(kc_get_user_id "${username}")"
-    log_info "Created Keycloak user ${username}"
+    log_info "已创建 Keycloak 用户 ${username}"
   else
-    log_info "Keycloak user ${username} already exists"
+    log_info "Keycloak 用户 ${username} 已存在"
     user_json="$(http_get "${KC_URL}/admin/realms/${REALM}/users/${user_id}" "$(kc_admin_header)")"
     payload="$(printf '%s' "${user_json}" | jq --arg e "${email}" '.email = $e | .emailVerified = true | .enabled = true')"
     http_put_json "${KC_URL}/admin/realms/${REALM}/users/${user_id}" "${payload}" "$(kc_admin_header)" >/dev/null
     http_put_json "${KC_URL}/admin/realms/${REALM}/users/${user_id}/reset-password" \
       "$(jq -n --arg p "${password}" '{type: "password", value: $p, temporary: false}')" \
       "$(kc_admin_header)" >/dev/null
-    log_info "Updated Keycloak user ${username}"
+    log_info "已更新 Keycloak 用户 ${username}"
   fi
   printf '%s' "${user_id}"
 }
@@ -100,13 +100,13 @@ kc_ensure_user() {
 kc_assign_user_group() {
   local user_id=$1 group_id=$2 label=$3
   http_request PUT "${KC_URL}/admin/realms/${REALM}/users/${user_id}/groups/${group_id}" "" "$(kc_admin_header)" >/dev/null
-  log_info "Assigned user to ${label}"
+  log_info "已将用户分配到 ${label}"
 }
 
 kc_remove_user_group() {
   local user_id=$1 group_id=$2 label=$3
   http_delete "${KC_URL}/admin/realms/${REALM}/users/${user_id}/groups/${group_id}" "$(kc_admin_header)" >/dev/null
-  log_info "Removed user from ${label}"
+  log_info "已将用户从 ${label} 移除"
 }
 
 kc_list_user_groups() {
@@ -120,31 +120,31 @@ kc_disable_user() {
   user_json="$(http_get "${KC_URL}/admin/realms/${REALM}/users/${user_id}" "$(kc_admin_header)")"
   payload="$(printf '%s' "${user_json}" | jq '.enabled = false')"
   http_put_json "${KC_URL}/admin/realms/${REALM}/users/${user_id}" "${payload}" "$(kc_admin_header)" >/dev/null
-  log_info "Disabled Keycloak user ${username}"
+  log_info "已禁用 Keycloak 用户 ${username}"
 }
 
 kc_delete_user() {
   local user_id=$1 username=$2
   http_delete "${KC_URL}/admin/realms/${REALM}/users/${user_id}" "$(kc_admin_header)" >/dev/null
-  log_info "Deleted Keycloak user ${username}"
+  log_info "已删除 Keycloak 用户 ${username}"
 }
 
 kc_setup_base() {
-  log_step "Setup Keycloak"
+  log_step "设置 Keycloak"
   local bootstrap_token admin_id admin_role_id bootstrap_id realms_json realm_exists client_uuid client_json payload existing_mappers existing_groups exists
 
   ADMIN_TOKEN="$(kc_token "${KC_ADMIN_USER}" "${KC_ADMIN_PASS}" || true)"
   if [ -z "${ADMIN_TOKEN}" ]; then
-    log_info "Permanent admin unavailable; using bootstrap admin"
+    log_info "正式管理员不可用，使用引导管理员"
     bootstrap_token="$(kc_token "${KC_BOOTSTRAP_ADMIN_USER}" "${KC_BOOTSTRAP_ADMIN_PASS}" || true)"
-    [ -n "${bootstrap_token}" ] || die "Bootstrap user ${KC_BOOTSTRAP_ADMIN_USER} cannot authenticate"
+    [ -n "${bootstrap_token}" ] || die "引导用户 ${KC_BOOTSTRAP_ADMIN_USER} 无法通过验证"
 
     admin_id="$(http_get "${KC_URL}/admin/realms/master/users?username=${KC_ADMIN_USER}&exact=true" "Authorization: Bearer ${bootstrap_token}" | jq -r '.[0].id // empty')"
     if [ -z "${admin_id}" ]; then
       payload="$(jq -n --arg u "${KC_ADMIN_USER}" --arg e "${KC_ADMIN_EMAIL}" '{username: $u, email: $e, emailVerified: true, enabled: true, firstName: $u, lastName: "-"}')"
       http_post_json "${KC_URL}/admin/realms/master/users" "${payload}" "Authorization: Bearer ${bootstrap_token}" >/dev/null
       admin_id="$(http_get "${KC_URL}/admin/realms/master/users?username=${KC_ADMIN_USER}&exact=true" "Authorization: Bearer ${bootstrap_token}" | jq -r '.[0].id // empty')"
-      log_info "Created permanent Keycloak admin ${KC_ADMIN_USER}"
+      log_info "已创建正式 Keycloak 管理员 ${KC_ADMIN_USER}"
     fi
 
     http_put_json "${KC_URL}/admin/realms/master/users/${admin_id}/reset-password" \
@@ -159,24 +159,24 @@ kc_setup_base() {
     fi
 
     ADMIN_TOKEN="$(kc_token "${KC_ADMIN_USER}" "${KC_ADMIN_PASS}" || true)"
-    [ -n "${ADMIN_TOKEN}" ] || die "Permanent admin cannot authenticate after setup"
+    [ -n "${ADMIN_TOKEN}" ] || die "正式管理员在设置后无法通过身份验证"
 
     bootstrap_id="$(http_get "${KC_URL}/admin/realms/master/users?username=${KC_BOOTSTRAP_ADMIN_USER}&exact=true" "Authorization: Bearer ${bootstrap_token}" | jq -r '.[0].id // empty')"
     if [ -n "${bootstrap_id}" ]; then
       http_put_json "${KC_URL}/admin/realms/master/users/${bootstrap_id}" '{"enabled": false}' "Authorization: Bearer ${bootstrap_token}" >/dev/null
-      log_info "Disabled bootstrap user ${KC_BOOTSTRAP_ADMIN_USER}"
+      log_info "已禁用引导用户 ${KC_BOOTSTRAP_ADMIN_USER}"
     fi
   else
-    log_info "Permanent admin token OK"
+    log_info "正式管理员令牌正常"
   fi
 
   realms_json="$(http_get "${KC_URL}/admin/realms" "$(kc_admin_header)")"
   realm_exists="$(printf '%s' "${realms_json}" | jq ". // [] | any(.realm == \"${REALM}\")")"
   if [ "${realm_exists}" != "true" ]; then
     http_post_json "${KC_URL}/admin/realms" "$(jq -n --arg r "${REALM}" '{realm: $r, enabled: true}')" "$(kc_admin_header)" >/dev/null
-    log_info "Created realm ${REALM}"
+    log_info "已创建 realm ${REALM}"
   else
-    log_info "Realm ${REALM} already exists"
+    log_info "Realm ${REALM} 已存在"
   fi
 
   client_uuid="$(http_get "${KC_URL}/admin/realms/${REALM}/clients?clientId=grafana" "$(kc_admin_header)" | jq -r '.[0].id // empty')"
@@ -187,9 +187,9 @@ kc_setup_base() {
       '{clientId: "grafana", name: "Grafana", protocol: "openid-connect", publicClient: false, authorizationServicesEnabled: true, serviceAccountsEnabled: true, standardFlowEnabled: true, directAccessGrantsEnabled: true, redirectUris: [$login_uri], attributes: {"post.logout.redirect.uris": $logout_uri}}')"
     http_post_json "${KC_URL}/admin/realms/${REALM}/clients" "${payload}" "$(kc_admin_header)" >/dev/null
     client_uuid="$(http_get "${KC_URL}/admin/realms/${REALM}/clients?clientId=grafana" "$(kc_admin_header)" | jq -r '.[0].id // empty')"
-    log_info "Created grafana client"
+    log_info "已创建 Grafana 客户端"
   fi
-  [ -n "${client_uuid}" ] || die "Client grafana was not created or could not be queried"
+  [ -n "${client_uuid}" ] || die "客户端 grafana 未创建或无法查询"
 
   client_json="$(http_get "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}" "$(kc_admin_header)")"
   payload="$(printf '%s' "${client_json}" | jq -c \
@@ -198,13 +198,13 @@ kc_setup_base() {
     --arg logout_uri "${GRAFANA_URL}/login" \
     '.secret = $secret | .redirectUris = [$login_uri] | .attributes = ((.attributes // {}) + {"post.logout.redirect.uris": $logout_uri})')"
   http_put_json "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}" "${payload}" "$(kc_admin_header)" >/dev/null
-  log_info "Synced grafana client"
+  log_info "已同步 Grafana 客户端"
 
   existing_mappers="$(http_get "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" "$(kc_admin_header)")"
   exists="$(printf '%s' "${existing_mappers}" | jq '. // [] | any(.name == "groups")')"
   if [ "${exists}" != "true" ]; then
     http_post_json "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}/protocol-mappers/models" '{"name":"groups","protocol":"openid-connect","protocolMapper":"oidc-group-membership-mapper","config":{"claim.name":"groups","full.path":"false","id.token.claim":"true","access.token.claim":"true","userinfo.token.claim":"true"}}' "$(kc_admin_header)" >/dev/null
-    log_info "Created groups protocol mapper"
+    log_info "已创建 groups 协议映射器"
   fi
 
   existing_groups="$(http_get "${KC_URL}/admin/realms/${REALM}/groups" "$(kc_admin_header)")"
@@ -213,9 +213,9 @@ kc_setup_base() {
     exists="$(printf '%s' "${existing_groups}" | jq ". // [] | any(.name == \"${group}\")")"
     if [ "${exists}" != "true" ]; then
       http_post_json "${KC_URL}/admin/realms/${REALM}/groups" "{\"name\": \"${group}\"}" "$(kc_admin_header)" >/dev/null
-      log_info "Created group ${group}"
+      log_info "已创建组 ${group}"
     fi
   done
 
-  log_ok "Keycloak setup complete"
+  log_ok "Keycloak 设置完成"
 }

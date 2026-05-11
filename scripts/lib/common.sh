@@ -13,22 +13,22 @@ die() {
 
 require_cmd() {
   local cmd=$1
-  command -v "${cmd}" >/dev/null 2>&1 || die "Missing required command: ${cmd}"
+  command -v "${cmd}" >/dev/null 2>&1 || die "缺少必需的命令：${cmd}"
 }
 
 require_file() {
   local file=$1
-  [ -f "${file}" ] || die "Required file not found: ${file}"
+  [ -f "${file}" ] || die "必需文件未找到：${file}"
 }
 
 require_env() {
   local name=$1
-  [ -n "${!name:-}" ] || die "Required environment variable is not set: ${name}"
+  [ -n "${!name:-}" ] || die "必需环境变量未设置：${name}"
 }
 
 require_number() {
   local name=$1 value=$2
-  [[ "${value}" =~ ^[0-9]+$ ]] || die "${name} must be a number, got: ${value}"
+  [[ "${value}" =~ ^[0-9]+$ ]] || die "${name} 必须是数字，当前值：${value}"
 }
 
 base64_one_line() {
@@ -50,7 +50,7 @@ ensure_project_root() {
 }
 
 check_prerequisites() {
-  log_step "Check prerequisites"
+  log_step "检查前置依赖"
   require_cmd curl
   require_cmd jq
   require_cmd docker
@@ -62,10 +62,10 @@ check_prerequisites() {
   require_cmd sha256sum
 
   if ! command -v yq >/dev/null 2>&1; then
-    die "Missing required command: yq (mikefarah/yq v4.18+)"
+    die "缺少必需的命令：yq（mikefarah/yq v4.18+）"
   fi
   if ! yq --version 2>/dev/null | grep -qi mikefarah; then
-    die "Wrong yq implementation: $(yq --version 2>&1). Required: mikefarah/yq v4.18+"
+    die "yq 实现错误：$(yq --version 2>&1)。需要：mikefarah/yq v4.18+"
   fi
-  log_ok "All prerequisites found"
+  log_ok "前置依赖检查通过"
 }

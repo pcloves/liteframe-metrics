@@ -14,11 +14,11 @@ vmauth_write_org_entry() {
     --arg password "${org_password}" \
     --argjson account_id "${account_id}" \
     '{username: $username, password: $password, url_map: [{src_paths: ["/select/.*"], drop_src_path_prefix_parts: 1, url_prefix: ["http://vmselect-1:8481/select/\($account_id)/prometheus/", "http://vmselect-2:8481/select/\($account_id)/prometheus/"]}, {src_paths: ["/api/v1/import/prometheus"], url_prefix: ["http://vminsert-1:8480/insert/\($account_id)/prometheus/", "http://vminsert-2:8480/insert/\($account_id)/prometheus/"]}]}' | yq -P > "${auth_file}"
-  log_info "Wrote ${auth_file}"
+  log_info "已写入 ${auth_file}"
 }
 
 vmauth_generate_auth() {
-  log_step "Generate vmauth auth.yaml"
+  log_step "生成 vmauth 认证配置 auth.yaml"
   local auth_d="vmauth/auth.d" auth_yaml="vmauth/auth.yaml" tmp_dir first count file
   mkdir -p "${auth_d}" vmauth
   tmp_dir="$(mktemp -d)"
@@ -48,19 +48,19 @@ vmauth_generate_auth() {
     count=0
   fi
   rm -rf "${tmp_dir}"
-  log_ok "Generated ${auth_yaml} (${count} sources)"
+  log_ok "已生成 ${auth_yaml}（合并 ${count} 个认证条目）"
 }
 
 vmauth_clean_tenant_entries() {
   mkdir -p vmauth/auth.d
   find vmauth/auth.d -maxdepth 1 -name '[!_]*.yaml' -delete
-  log_info "Removed generated tenant auth entries"
+  log_info "已清理生成的租户认证条目"
 }
 
 vmauth_reload() {
   if docker compose exec vmauth kill -HUP 1 >/dev/null 2>&1; then
-    log_info "Reloaded vmauth"
+    log_info "已重新加载 vmauth 配置"
   else
-    log_warn "vmauth reload skipped; container may not be running"
+    log_warn "跳过 vmauth 重载，容器可能未运行"
   fi
 }

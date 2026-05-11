@@ -5,7 +5,7 @@ dashboards_dir_for_set() {
   case "${dashboard_set}" in
     platform) printf '%s' "${PROJECT_DIR}/grafana/dashboards/platform" ;;
     tenants) printf '%s' "${PROJECT_DIR}/grafana/dashboards/tenants" ;;
-    *) die "Unknown dashboard set ${dashboard_set}" ;;
+    *) die "未知的仪表盘集合 ${dashboard_set}" ;;
   esac
 }
 
@@ -46,11 +46,11 @@ dashboards_import() {
   local dashboards_dir org_id dashboard_file dashboard_name tmp_file payload_file base_uid new_uid exists result count=0
 
   dashboards_dir="$(dashboards_dir_for_set "${dashboard_set}")"
-  [ -d "${dashboards_dir}" ] || { log_warn "Dashboard directory not found: ${dashboards_dir}"; return 0; }
+  [ -d "${dashboards_dir}" ] || { log_warn "仪表盘目录未找到：${dashboards_dir}"; return 0; }
   org_id="$(grafana_get_org_id_by_name "${grafana_org_name}")"
-  [ -n "${org_id}" ] || { log_warn "Grafana org ${grafana_org_name} not found; skipping dashboard import"; return 0; }
+  [ -n "${org_id}" ] || { log_warn "Grafana 组织 ${grafana_org_name} 未找到，跳过仪表盘导入"; return 0; }
 
-  log_step "Import ${dashboard_set} dashboards into ${grafana_org_name} (id=${org_id})"
+  log_step "将 ${dashboard_set} 仪表盘导入到 ${grafana_org_name}（id=${org_id}）"
   grafana_switch_org "${org_id}"
 
   for dashboard_file in "${dashboards_dir}"/*.json; do
@@ -67,7 +67,7 @@ dashboards_import() {
     if [ "${overwrite}" != "true" ]; then
       exists="$(curl -sS "${GRAFANA_URL}/api/dashboards/uid/${new_uid}" -H "$(grafana_header)" | jq -r '.dashboard.uid // empty' 2>/dev/null || true)"
       if [ -n "${exists}" ]; then
-        log_info "Skipped dashboard ${dashboard_name}; uid=${new_uid} already exists"
+        log_info "已跳过仪表盘 ${dashboard_name}，uid=${new_uid} 已存在"
         rm -f "${tmp_file}" "${payload_file}"
         continue
       fi
@@ -76,13 +76,13 @@ dashboards_import() {
     jq -n --slurpfile dashboard "${tmp_file}" '{dashboard: $dashboard[0], overwrite: true, message: "Imported by scripts/manage.sh"}' > "${payload_file}"
     result="$(curl -sS -X POST "${GRAFANA_URL}/api/dashboards/db" -H "$(grafana_header)" -H "Content-Type: application/json" --data-binary "@${payload_file}")"
     if printf '%s' "${result}" | jq -e '.uid' >/dev/null 2>&1; then
-      log_info "Imported dashboard ${dashboard_name}; uid=${new_uid}"
+      log_info "已导入仪表盘 ${dashboard_name}，uid=${new_uid}"
     else
-      log_warn "Dashboard ${dashboard_name} import failed: $(printf '%s' "${result}" | jq -r '.message // "unknown"')"
+      log_warn "仪表盘 ${dashboard_name} 导入失败：$(printf '%s' "${result}" | jq -r '.message // "未知错误"')"
     fi
     rm -f "${tmp_file}" "${payload_file}"
   done
 
-  [ "${count}" -gt 0 ] || log_warn "No dashboard JSON files found in ${dashboards_dir}"
+  [ "${count}" -gt 0 ] || log_warn "在 ${dashboards_dir} 中未找到仪表盘 JSON 文件"
   grafana_switch_org 1
 }
