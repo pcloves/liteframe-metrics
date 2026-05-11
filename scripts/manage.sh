@@ -35,6 +35,7 @@ Usage:
   bash scripts/manage.sh oauth sync
   bash scripts/manage.sh dashboard import <org-name> [--grafana-name <name>] [--overwrite]
   bash scripts/manage.sh dashboard import --main [--overwrite]
+  bash scripts/manage.sh dashboard import --all-tenants [--overwrite]
   bash scripts/manage.sh auth generate
 
 Roles:
@@ -130,12 +131,16 @@ cmd_oauth_sync() {
 
 cmd_dashboard_import() {
   [ $# -ge 1 ] || { usage; exit 1; }
-  local is_main=false org_name grafana_org_name overwrite=false
+  local is_main=false all_tenants=false org_name grafana_org_name overwrite=false group_name
 
   if [ "$1" = "--main" ]; then
     [ $# -le 2 ] || { usage; exit 1; }
     is_main=true
     org_name="main"
+    shift
+  elif [ "$1" = "--all-tenants" ]; then
+    [ $# -le 2 ] || { usage; exit 1; }
+    all_tenants=true
     shift
   else
     org_name=$1
@@ -164,7 +169,46 @@ cmd_dashboard_import() {
     esac
   done
 
-  dashboards_import "${org_name}" "${grafana_org_name}" "${overwrite}"
+  if [ "${all_tenants}" = true ] && [ -n "${grafana_org_name}" ]; then
+    die "--grafana-name cannot be used with --all-tenants"
+  fi
+
+  if [ "${all_tenants}" = true ]; then
+    kc_get_admin_token
+    dashboard_import_all_tenants "${overwrite}"
+    return
+  fi
+
+  group_name="$(kc_group_name_for_org "${org_name}")"
+  if [ "${is_main}" = true ]; then
+    dashboards_import platform "${group_name}" "${grafana_org_name}" "${overwrite}"
+  else
+    dashboards_import tenants "${group_name}" "${grafana_org_name}" "${overwrite}"
+  fi
+}
+
+dashboard_import_all_tenants() {
+  local overwrite=$1 kc_groups group group_id group_name group_json grafana_org_id grafana_org_name count=0
+  kc_groups="$(http_get "${KC_URL}/admin/realms/${REALM}/groups" "$(kc_admin_header)")"
+
+  while read -r group; do
+    group_id="$(printf '%s' "${group}" | jq -r '.id // empty')"
+    group_name="$(printf '%s' "${group}" | jq -r '.name // empty')"
+    [ -n "${group_id}" ] || continue
+    [ -n "${group_name}" ] || continue
+    [ "${group_name}" != "org-main" ] || continue
+
+    group_json="$(http_get "${KC_URL}/admin/realms/${REALM}/groups/${group_id}" "$(kc_admin_header)")"
+    grafana_org_id="$(printf '%s' "${group_json}" | jq -r '.attributes.grafana_org_id[0] // empty')"
+    [ -n "${grafana_org_id}" ] || continue
+    grafana_org_name="$(grafana_get_org_name "${grafana_org_id}")"
+    [ -n "${grafana_org_name}" ] || { log_warn "Grafana org id ${grafana_org_id} not found; skipping ${group_name}"; continue; }
+
+    dashboards_import tenants "${group_name}" "${grafana_org_name}" "${overwrite}"
+    count=$((count + 1))
+  done < <(printf '%s' "${kc_groups}" | jq -c '.[]')
+
+  [ "${count}" -gt 0 ] || log_warn "No tenant orgs found for dashboard import"
 }
 
 cmd_org_add() {
@@ -220,7 +264,11 @@ cmd_org_add() {
   vmauth_reload
 
   grafana_ensure_basic_datasource "${org_id}" "${grafana_org_name}" "${group_name}" "${org_password}"
-  dashboards_import "${org_name}" "${grafana_org_name}" false
+  if [ "${is_main}" = true ]; then
+    dashboards_import platform "${group_name}" "${grafana_org_name}" false
+  else
+    dashboards_import tenants "${group_name}" "${grafana_org_name}" false
+  fi
   grafana_sync_oauth_from_keycloak
   log_ok "Org ${org_name} ready"
 }

@@ -43,7 +43,8 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Hot-reload vmauth | `docker compose exec vmauth kill -HUP 1` |
 | Import dashboards (skip existing) | `bash scripts/manage.sh dashboard import <org-name> [--grafana-name <name>]` |
 | Import dashboards (force overwrite) | `bash scripts/manage.sh dashboard import <org-name> --grafana-name <name> --overwrite` |
-| Import dashboards into main org | `bash scripts/manage.sh dashboard import --main [--overwrite]` |
+| Import platform dashboards into main org | `bash scripts/manage.sh dashboard import --main [--overwrite]` |
+| Import tenant dashboards into all tenant orgs | `bash scripts/manage.sh dashboard import --all-tenants [--overwrite]` |
 
 **Order matters** for new tenants: `bash scripts/manage.sh org add ...` first (creates org + datasource + dashboards), then `bash scripts/manage.sh user add ...`.
 
@@ -60,7 +61,8 @@ All management commands write timestamped logs to `logs/manage-YYYYMMDD.log` and
 | `scripts/manage.sh` | Unified management CLI |
 | `scripts/lib/` | Shared Bash libraries for logging, env, HTTP, Grafana, Keycloak, vmauth, dashboards, and Docker |
 | `docs/` | Architecture doc and Keycloak setup guide (Chinese) |
-| `grafana/dashboards/default/` | Per-org dashboard templates (imported by `scripts/manage.sh dashboard import`) |
+| `grafana/dashboards/platform/` | Platform dashboard templates for Main Org (VictoriaMetrics cluster, vmagent, vmalert, vmauth, tenant/query/alert stats) |
+| `grafana/dashboards/tenants/` | Per-tenant dashboard templates (imported by `scripts/manage.sh dashboard import <org-name>`) |
 | `grafana/provisioning/datasources/` | (Not used — datasources created via API by `scripts/manage.sh org add`) |
 | `vmalert/rules/` | Alerting rules (health alerts for VM components) |
 | `alertmanager/config/` | Currently routes to blackhole — configure receiver for real notifications |
@@ -82,6 +84,8 @@ Types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`, `style`, `ci`
 
 - Keycloak init is **two-phase**: bootstrap admin (disabled after setup) → permanent admin. Scripts are idempotent.
 - vmauth `auth.yaml` is **not** checked into git — it is generated. Never edit it directly.
-- Grafana datasource `vmauth-cluster` (uid `vmauth-cluster`) is created per-org by `scripts/manage.sh org add` using Basic Auth (per-org credentials → vmauth → tenant-scoped Prometheus). All dashboard templates in `grafana/dashboards/default/` reference this UID.
+- Grafana datasource `vmauth-cluster` (uid `vmauth-cluster`) is created per-org by `scripts/manage.sh org add` using Basic Auth (per-org credentials → vmauth → tenant-scoped Prometheus). Dashboard imports normalize datasource references to this UID.
+- Main Org is the platform/admin observability org. It imports `grafana/dashboards/platform/` only; tenant orgs import `grafana/dashboards/tenants/` only.
+- Dashboard UIDs are suffixed with the Keycloak group name (`org-main`, `org-test`, etc.) to keep Grafana dashboard identity aligned with OAuth group mapping.
 - Admin user is created via the same flow as tenant users: `scripts/manage.sh org add --main` then `scripts/manage.sh user add main admin <pass> grafanaAdmin <email>`. The `org-main` group maps to `Main Org.` in Grafana, and `role-grafanaAdmin` grants the Grafana server admin role.
 - Alertmanager has no receiver configured (routes to `blackhole`). Configure a real receiver before expecting alerts.
