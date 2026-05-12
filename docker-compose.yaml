@@ -71,6 +71,7 @@ services:
       - ./vmstorage-1/data:/storage
     command:
       - --storageDataPath=/storage
+      - --retentionPeriod=${VM_RETENTION_PERIOD:-90d}
 
   vmstorage-2:
     image: victoriametrics/vmstorage:v1.142.0-cluster
@@ -80,6 +81,7 @@ services:
       - ./vmstorage-2/data:/storage
     command:
       - --storageDataPath=/storage
+      - --retentionPeriod=${VM_RETENTION_PERIOD:-90d}
 
   # ============================================================
   # VictoriaMetrics Cluster - 写入前端

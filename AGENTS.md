@@ -16,6 +16,9 @@ Required vars: `HOST_IP`, `KC_PORT`, `GRAFANA_PORT`, `KC_REALM`, `KC_BOOTSTRAP_A
 
 `.env` is gitignored — always check `.env.example` for the canonical list.
 
+`VM_RETENTION_PERIOD` controls VictoriaMetrics storage retention for all `vmstorage-*` nodes and defaults to `90d`.
+Keep the value consistent across storage nodes.
+
 ## Architecture
 
 vmauth is the single auth gateway (port 8427):
