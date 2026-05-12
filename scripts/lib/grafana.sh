@@ -28,6 +28,14 @@ grafana_ensure_org() {
   printf '%s' "${org_id}"
 }
 
+grafana_rename_org() {
+  local org_id=$1 org_name=$2
+  http_put_json "${GRAFANA_URL}/api/orgs/${org_id}" \
+    "$(jq -n --arg name "${org_name}" '{name: $name}')" \
+    "$(grafana_header)" >/dev/null
+  log_info "已将 Grafana 组织 id=${org_id} 重命名为 ${org_name}"
+}
+
 grafana_switch_org() {
   local org_id=$1
   http_request POST "${GRAFANA_URL}/api/user/using/${org_id}" "" "$(grafana_header)" >/dev/null
@@ -85,7 +93,7 @@ grafana_ensure_basic_datasource() {
   exists="$(curl -sS "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" -H "$(grafana_header)" | jq -r '.uid // empty' 2>/dev/null || true)"
   if [ -n "${exists}" ]; then
     http_put_json "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" "${payload}" "$(grafana_header)" >/dev/null
-    log_info "已更新组织 ${org_name} 中的数据源 ${ds_uid}"
+    log_info "已更新组织 ${org_name} 中的数据源 ${ds_uid}（Basic Auth 用户名/密码）"
   else
     result="$(curl -sS -X POST "${GRAFANA_URL}/api/datasources" -H "$(grafana_header)" -H "Content-Type: application/json" -d "${payload}")"
     if printf '%s' "${result}" | jq -e '.datasource.id' >/dev/null 2>&1; then

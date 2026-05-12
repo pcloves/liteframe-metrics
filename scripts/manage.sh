@@ -30,6 +30,7 @@ usage() {
   bash scripts/manage.sh kc setup
   bash scripts/manage.sh org add --main
   bash scripts/manage.sh org add <org-name> <grafana-org-name> [--vm-account-id <id>] [--vmauth-password <password>] [--allow-duplicate-account-id] [--use-existing-grafana-org]
+  bash scripts/manage.sh org update <org-name> [--grafana-org-name <name>] [--vm-account-id <id>] [--vmauth-password <password>] [--rotate-password] [--allow-duplicate-account-id] [--use-existing-grafana-org]
   bash scripts/manage.sh org user add <org-name> <username>
   bash scripts/manage.sh org user delete <org-name> <username>
   bash scripts/manage.sh user add <username> <password> <email> <role>
@@ -51,6 +52,7 @@ usage() {
   <grafana-org-name> 默认不可复用；如确认绑定到未被 Keycloak group 使用的已有 Grafana 组织，请追加 --use-existing-grafana-org。
   --vm-account-id 未指定时自动分配，默认不可重复；如确认复用，请追加 --allow-duplicate-account-id。
   --vmauth-password 未指定时自动生成，并存入 Keycloak group attributes。
+  org update 可修改租户的 Grafana 组织、vm-account-id 或 vmauth 密码；--rotate-password 会自动生成新密码。
 EOF
 }
 
@@ -428,6 +430,160 @@ cmd_org_add() {
   log_info "vmauth Basic Auth 密码：${org_password}"
 }
 
+cmd_org_update() {
+  [ $# -ge 1 ] || { usage; exit 1; }
+  local org_name=$1
+  shift
+
+  local grafana_org_name_arg="" account_id_arg="" vmauth_password_arg=""
+  local rotate_password=false allow_duplicate_account_id=false use_existing_grafana_org=false changed=false
+  local account_changed=false password_changed=false org_binding_changed=false org_renamed=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --grafana-org-name)
+        [ $# -ge 2 ] || die "--grafana-org-name 参数需要提供值"
+        grafana_org_name_arg=$2
+        changed=true
+        shift 2
+        ;;
+      --vm-account-id)
+        [ $# -ge 2 ] || die "--vm-account-id 参数需要提供值"
+        account_id_arg=$2
+        require_number vm-account-id "${account_id_arg}"
+        changed=true
+        shift 2
+        ;;
+      --vmauth-password)
+        [ $# -ge 2 ] || die "--vmauth-password 参数需要提供值"
+        vmauth_password_arg=$2
+        changed=true
+        shift 2
+        ;;
+      --rotate-password)
+        rotate_password=true
+        changed=true
+        shift
+        ;;
+      --allow-duplicate-account-id)
+        allow_duplicate_account_id=true
+        shift
+        ;;
+      --use-existing-grafana-org)
+        use_existing_grafana_org=true
+        shift
+        ;;
+      *) usage; exit 1 ;;
+    esac
+  done
+
+  [ "${changed}" = true ] || die "org update 至少需要一个更新参数"
+  [ -z "${vmauth_password_arg}" ] || [ "${rotate_password}" != true ] || die "--vmauth-password 与 --rotate-password 不能同时使用"
+
+  load_runtime
+  kc_get_admin_token
+
+  local group_name group_id group_json existing_account_id existing_password existing_grafana_org_id
+  local account_id org_password org_id grafana_org_name account_id_owner existing_org_id grafana_org_owner
+  group_name="$(kc_group_name_for_org "${org_name}")"
+  [ "${group_name}" != "org-main" ] || die "org update 仅用于租户组织；Main Org 请使用 org add --main 重新确保配置。"
+  group_id="$(kc_get_group_id "${group_name}")"
+  [ -n "${group_id}" ] || die "Keycloak group ${group_name} 未找到。请先运行 org add。"
+
+  group_json="$(kc_get_group_json "${group_id}")"
+  existing_account_id="$(kc_group_attribute "${group_json}" metrics_account_id)"
+  existing_password="$(kc_group_attribute "${group_json}" vmauth_password)"
+  existing_grafana_org_id="$(kc_group_attribute "${group_json}" grafana_org_id)"
+  [ -n "${existing_account_id}" ] || die "Keycloak group ${group_name} 缺少 metrics_account_id。请先运行 org add 修复元数据。"
+  [ -n "${existing_grafana_org_id}" ] || die "Keycloak group ${group_name} 缺少 grafana_org_id。请先运行 org add 修复元数据。"
+
+  account_id="${existing_account_id}"
+  if [ -n "${account_id_arg}" ]; then
+    account_id="${account_id_arg}"
+    if [ "${account_id}" != "${existing_account_id}" ]; then
+      account_id_owner="$(kc_find_group_by_account_id "${account_id}" "${group_name}")"
+      if [ -n "${account_id_owner}" ]; then
+        if [ "${allow_duplicate_account_id}" = true ]; then
+          log_warn "account-id ${account_id} 已被 Keycloak group ${account_id_owner} 使用，本次按参数要求继续复用"
+        else
+          die "account-id ${account_id} 已被 Keycloak group ${account_id_owner} 使用。如确认复用，请追加 --allow-duplicate-account-id。"
+        fi
+      fi
+      account_changed=true
+    fi
+  fi
+
+  org_password="${existing_password}"
+  if [ "${rotate_password}" = true ]; then
+    org_password="$(vmauth_generate_password)"
+    password_changed=true
+    log_info "已为 ${group_name} 生成新的 vmauth password"
+  elif [ -n "${vmauth_password_arg}" ]; then
+    org_password="${vmauth_password_arg}"
+    [ "${org_password}" = "${existing_password}" ] || password_changed=true
+  elif [ -z "${org_password}" ]; then
+    org_password="$(vmauth_org_password "${org_name}")"
+    password_changed=true
+    log_info "沿用 ${group_name} 的旧版 vmauth password，并写入 Keycloak group attributes"
+  fi
+
+  org_id="${existing_grafana_org_id}"
+  grafana_org_name="$(grafana_get_org_name "${org_id}")"
+  [ -n "${grafana_org_name}" ] || die "Keycloak group ${group_name} 绑定的 Grafana 组织 id=${org_id} 未找到"
+  grafana_org_owner="$(kc_find_group_by_grafana_org_id "${org_id}" "${group_name}")"
+  [ -z "${grafana_org_owner}" ] || die "Grafana 组织 ${grafana_org_name}（id=${org_id}）已被 Keycloak group ${grafana_org_owner} 绑定。"
+
+  if [ -n "${grafana_org_name_arg}" ] && [ "${grafana_org_name_arg}" != "${grafana_org_name}" ]; then
+    existing_org_id="$(grafana_get_org_id_by_name "${grafana_org_name_arg}")"
+    if [ -n "${existing_org_id}" ]; then
+      grafana_org_owner="$(kc_find_group_by_grafana_org_id "${existing_org_id}" "${group_name}")"
+      [ -z "${grafana_org_owner}" ] || die "Grafana 组织 ${grafana_org_name_arg}（id=${existing_org_id}）已被 Keycloak group ${grafana_org_owner} 绑定。"
+      [ "${use_existing_grafana_org}" = true ] || die "Grafana 组织 ${grafana_org_name_arg} 已存在。如确认绑定到该组织，请追加 --use-existing-grafana-org。"
+      org_id="${existing_org_id}"
+      grafana_org_name="${grafana_org_name_arg}"
+      [ "${org_id}" = "${existing_grafana_org_id}" ] || org_binding_changed=true
+      log_warn "绑定到已有 Grafana 组织 ${grafana_org_name}（id=${org_id}）"
+    else
+      grafana_rename_org "${org_id}" "${grafana_org_name_arg}"
+      grafana_org_name="${grafana_org_name_arg}"
+      org_renamed=true
+    fi
+  fi
+
+  if [ "${account_changed}" = true ]; then
+    kc_set_group_attribute "${group_id}" metrics_account_id "${account_id}"
+    log_info "已设置组 ${group_name} 的 metrics_account_id=${account_id}"
+  fi
+  if [ "${password_changed}" = true ]; then
+    kc_set_group_attribute "${group_id}" vmauth_password "${org_password}"
+    log_info "已设置组 ${group_name} 的 vmauth_password"
+  fi
+  if [ "${org_binding_changed}" = true ]; then
+    kc_set_group_attribute "${group_id}" grafana_org_id "${org_id}"
+    log_info "已设置组 ${group_name} 的 grafana_org_id=${org_id}"
+    grafana_ensure_admins_in_org "${org_id}" "${grafana_org_name}"
+  fi
+
+  if [ "${account_changed}" = true ] || [ "${password_changed}" = true ]; then
+    vmauth_write_org_entry "${group_name}" "${account_id}" "${org_password}"
+    vmauth_generate_auth
+    vmauth_reload
+  fi
+  if [ "${password_changed}" = true ] || [ "${org_binding_changed}" = true ]; then
+    grafana_ensure_basic_datasource "${org_id}" "${grafana_org_name}" "${group_name}" "${org_password}"
+  fi
+  if [ "${org_binding_changed}" = true ]; then
+    grafana_sync_oauth_from_keycloak
+  fi
+
+  if [ "${account_changed}" != true ] && [ "${password_changed}" != true ] && [ "${org_binding_changed}" != true ] && [ "${org_renamed}" != true ]; then
+    log_info "组织 ${grafana_org_name}（${group_name}）没有需要更新的内容"
+  fi
+
+  log_ok "组织 ${grafana_org_name}（${group_name}）已更新"
+  log_info "vmauth Basic Auth 用户名：${group_name}"
+  log_info "vmauth Basic Auth 密码：${org_password}"
+}
+
 verify_jwt() {
   local token
   log_step "验证 Grafana OIDC JWT"
@@ -499,6 +655,7 @@ main() {
     org)
       case "${1:-}" in
         add) shift; cmd_org_add "$@" ;;
+        update) shift; cmd_org_update "$@" ;;
         user)
           shift
           case "${1:-}" in
