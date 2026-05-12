@@ -4,7 +4,7 @@
 
 ```bash
 cp .env.example .env     # edit HOST_IP, GRAFANA_CLIENT_SECRET, etc.
-bash init.sh              # scripts/manage.sh init: auth generate → compose up → kc setup → main org/user → oauth sync
+bash init.sh              # scripts/manage.sh init: auth generate → compose up → kc setup → main org/user → sync oauth-mapping
 ```
 
 Prerequisites on host: `curl`, `jq`, `docker`, **mikefarah/yq** v4.18+ (NOT the Python `yq`).
@@ -42,7 +42,7 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | List user groups | `bash scripts/manage.sh user groups <username>` |
 | Disable tenant user | `bash scripts/manage.sh user delete <username>` (re-enable in Keycloak) |
 | Delete tenant user | `bash scripts/manage.sh user delete <username> --force` |
-| Sync OAuth mappings | `bash scripts/manage.sh oauth sync` |
+| Sync derived config | `bash scripts/manage.sh sync all [--prune-stale]` |
 | Regenerate auth config | `bash scripts/manage.sh auth generate` |
 | Hot-reload vmauth | `docker compose exec vmauth kill -HUP 1` |
 | Import dashboards (skip existing) | `bash scripts/manage.sh dashboard import <org-name> [--grafana-name <name>]` |
@@ -50,7 +50,9 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Import platform dashboards into main org | `bash scripts/manage.sh dashboard import --main [--overwrite]` |
 | Import tenant dashboards into all tenant orgs | `bash scripts/manage.sh dashboard import --all-tenants [--overwrite]` |
 
-`bash scripts/manage.sh --help` presents a layered CLI guide, and most scopes support their own `--help` entry points, for example `bash scripts/manage.sh org --help`, `bash scripts/manage.sh org add --help`, `bash scripts/manage.sh org update --help`, `bash scripts/manage.sh user add --help`, and `bash scripts/manage.sh dashboard import --help`.
+`bash scripts/manage.sh --help` presents a layered CLI guide, and most scopes support their own `--help` entry points, for example `bash scripts/manage.sh org --help`, `bash scripts/manage.sh org add --help`, `bash scripts/manage.sh org update --help`, `bash scripts/manage.sh user add --help`, `bash scripts/manage.sh sync --help`, and `bash scripts/manage.sh dashboard import --help`.
+
+`sync tenant-auth --all --prune-stale` only prunes tenant-generated `vmauth/auth.d/*.yaml` entries. Files whose basename starts with `_` are treated as system-reserved and are never deleted.
 
 **Order matters** for new tenants: `bash scripts/manage.sh org add ...` first (creates org + datasource + dashboards), then `bash scripts/manage.sh user add ...`, then `bash scripts/manage.sh org user add ...`.
 

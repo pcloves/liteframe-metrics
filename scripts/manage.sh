@@ -68,7 +68,7 @@ CardFrame VM Cluster 管理 CLI
   kc setup              配置 Keycloak realm、Grafana 客户端、角色组和默认管理员
   org                   管理 Main Org、租户组织、租户元数据和组织成员
   user                  管理 Keycloak 用户身份和 Grafana 角色组
-  oauth sync            根据 Keycloak group attributes 重建 Grafana OAuth org mapping
+  sync                  从 Keycloak group attributes 同步 OAuth 映射和租户认证配置
   dashboard import      导入平台或租户 dashboard
   auth generate         从 vmauth/auth.d 重新生成 vmauth/auth.yaml
 
@@ -84,6 +84,7 @@ CardFrame VM Cluster 管理 CLI
   bash scripts/manage.sh org add --help
   bash scripts/manage.sh org update --help
   bash scripts/manage.sh user --help
+  bash scripts/manage.sh sync --help
   bash scripts/manage.sh dashboard import --help
 EOF
 }
@@ -328,16 +329,78 @@ help_dashboard_import() {
 EOF
 }
 
-help_oauth() {
+help_sync() {
+  cat <<'EOF'
+同步派生配置
+
+用法：
+  bash scripts/manage.sh sync oauth-mapping
+  bash scripts/manage.sh sync tenant-auth <org-name>
+  bash scripts/manage.sh sync tenant-auth --all [--prune-stale]
+  bash scripts/manage.sh sync all [--prune-stale]
+
+命令：
+  oauth-mapping         从 Keycloak group grafana_org_id 重建 Grafana OAuth org_mapping
+  tenant-auth           从 Keycloak group 元数据同步 vmauth entry 和 Grafana datasource Basic Auth
+  all                   先同步 tenant-auth --all，再同步 oauth-mapping
+
+说明：
+  组织 group 不按名称前缀识别，而是按 Keycloak group attributes 判定。
+  同时具备 metrics_account_id、vmauth_password、grafana_org_id 的 group 会被视为组织 group。
+  只具备其中一部分组织元数据的 group 会被视为异常并中止同步。
+
+示例：
+  bash scripts/manage.sh sync oauth-mapping
+  bash scripts/manage.sh sync tenant-auth org-ztdev
+  bash scripts/manage.sh sync tenant-auth --all
+  bash scripts/manage.sh sync tenant-auth --all --prune-stale
+  bash scripts/manage.sh sync all --prune-stale
+
+更多帮助：
+  bash scripts/manage.sh sync tenant-auth --help
+  bash scripts/manage.sh sync oauth-mapping --help
+EOF
+}
+
+help_sync_oauth_mapping() {
   cat <<'EOF'
 同步 OAuth 组织映射
 
 用法：
-  bash scripts/manage.sh oauth sync
+  bash scripts/manage.sh sync oauth-mapping
 
-说明：
-  根据 Keycloak group attributes 中的 grafana_org_id 重建 Grafana org_mapping。
-  org add 和部分 org update 操作会自动调用；手动修复映射时可单独执行。
+行为：
+  根据当前 Keycloak group attributes 中的 grafana_org_id 重建 Grafana OAuth org_mapping。
+  已从 Keycloak 删除或不再绑定 grafana_org_id 的 group，其旧 OAuth mapping 会被移除。
+  该命令不更新 vmauth/auth.yaml，也不更新 Grafana datasource Basic Auth。
+EOF
+}
+
+help_sync_tenant_auth() {
+  cat <<'EOF'
+同步租户认证配置
+
+用法：
+  bash scripts/manage.sh sync tenant-auth <org-name>
+  bash scripts/manage.sh sync tenant-auth --all [--prune-stale]
+
+选项：
+  --all                 同步所有具备完整组织元数据的 Keycloak group，包含 org-main
+  --prune-stale         删除 vmauth/auth.d 中不再对应当前 Keycloak 组织 group 的过期 entry
+
+  行为：
+  从 Keycloak group attributes 读取 metrics_account_id、vmauth_password、grafana_org_id。
+  重写 vmauth/auth.d/<group>.yaml，重新生成 vmauth/auth.yaml，并 reload vmauth。
+  更新对应 Grafana org 的 datasource vmauth-cluster（Basic Auth 用户名/密码）。
+  --all 不按 group 名称前缀筛选；只按完整组织元数据判定。
+  --prune-stale 只清理过期 vmauth entry，不自动删除 Grafana org 或 datasource。
+  以 `_` 开头的 `vmauth/auth.d/*.yaml` 视为系统保留 entry，不参与清理。
+
+示例：
+  bash scripts/manage.sh sync tenant-auth org-ztdev
+  bash scripts/manage.sh sync tenant-auth main
+  bash scripts/manage.sh sync tenant-auth --all
+  bash scripts/manage.sh sync tenant-auth --all --prune-stale
 EOF
 }
 
@@ -494,12 +557,183 @@ cmd_user_delete() {
   log_ok "用户 ${username} 操作完成"
 }
 
-cmd_oauth_sync() {
-  if is_help_arg "${1:-}"; then help_oauth; exit 0; fi
-  [ $# -eq 0 ] || { help_oauth; exit 1; }
+sync_tenant_auth_group() {
+  local group_name=$1 group_json=$2
+  local account_id vmauth_password grafana_org_id grafana_org_name
+
+  account_id="$(printf '%s' "${group_json}" | jq -r '.attributes.metrics_account_id[0] // empty')"
+  vmauth_password="$(printf '%s' "${group_json}" | jq -r '.attributes.vmauth_password[0] // empty')"
+  grafana_org_id="$(printf '%s' "${group_json}" | jq -r '.attributes.grafana_org_id[0] // empty')"
+
+  [ -n "${account_id}" ] || die "Keycloak group ${group_name} 的组织元数据不完整：缺少 metrics_account_id"
+  [ -n "${vmauth_password}" ] || die "Keycloak group ${group_name} 的组织元数据不完整：缺少 vmauth_password"
+  [ -n "${grafana_org_id}" ] || die "Keycloak group ${group_name} 的组织元数据不完整：缺少 grafana_org_id"
+
+  grafana_org_name="$(grafana_get_org_name "${grafana_org_id}")"
+  [ -n "${grafana_org_name}" ] || die "Keycloak group ${group_name} 绑定的 Grafana 组织 id=${grafana_org_id} 未找到"
+
+  log_info "同步租户认证：${group_name}（Grafana org ${grafana_org_name}，id=${grafana_org_id}，vm-account-id=${account_id}）"
+  vmauth_write_org_entry "${group_name}" "${account_id}" "${vmauth_password}"
+  grafana_ensure_basic_datasource "${grafana_org_id}" "${grafana_org_name}" "${group_name}" "${vmauth_password}"
+}
+
+sync_tenant_auth_single() {
+  local org_name=$1 group_name group_id group_json
+
+  group_name="$(kc_group_name_for_org "${org_name}")"
+  group_id="$(kc_get_group_id "${group_name}")"
+  [ -n "${group_id}" ] || die "Keycloak group ${group_name} 未找到。请先运行 org add。"
+
+  group_json="$(kc_get_group_json "${group_id}")"
+  sync_tenant_auth_group "${group_name}" "${group_json}"
+  vmauth_generate_auth
+  vmauth_reload
+  log_ok "租户认证已同步：${group_name}"
+}
+
+sync_tenant_auth_all() {
+  local prune_stale=$1 kc_groups group group_id group_name group_json current_group_names=() synced_count=0 skipped_count=0 stale_count=0
+  local auth_dir="vmauth/auth.d" file base_name stale_group_name
+
+  kc_groups="$(kc_list_groups_full)"
+
+  while read -r group; do
+    group_id="$(printf '%s' "${group}" | jq -r '.id // empty')"
+    group_name="$(printf '%s' "${group}" | jq -r '.name // empty')"
+    [ -n "${group_id}" ] || continue
+    [ -n "${group_name}" ] || continue
+
+    group_json="$(kc_get_group_json "${group_id}")"
+    if printf '%s' "${group_json}" | jq -e '.attributes.metrics_account_id[0]? and .attributes.vmauth_password[0]? and .attributes.grafana_org_id[0]?' >/dev/null 2>&1; then
+      sync_tenant_auth_group "${group_name}" "${group_json}"
+      current_group_names+=("${group_name}")
+      synced_count=$((synced_count + 1))
+    else
+      if printf '%s' "${group_json}" | jq -e '.attributes.metrics_account_id[0]? or .attributes.vmauth_password[0]? or .attributes.grafana_org_id[0]?' >/dev/null 2>&1; then
+        local missing_attrs=()
+        printf '%s' "${group_json}" | jq -e '.attributes.metrics_account_id[0]?' >/dev/null 2>&1 || missing_attrs+=(metrics_account_id)
+        printf '%s' "${group_json}" | jq -e '.attributes.vmauth_password[0]?' >/dev/null 2>&1 || missing_attrs+=(vmauth_password)
+        printf '%s' "${group_json}" | jq -e '.attributes.grafana_org_id[0]?' >/dev/null 2>&1 || missing_attrs+=(grafana_org_id)
+        die "Keycloak group ${group_name} 的组织元数据不完整：缺少 ${missing_attrs[*]}"
+      fi
+      skipped_count=$((skipped_count + 1))
+    fi
+  done < <(printf '%s' "${kc_groups}" | jq -c '.[]')
+
+  if [ "${prune_stale}" = true ]; then
+    mkdir -p "${auth_dir}"
+    while IFS= read -r file; do
+      base_name="$(basename "${file}" .yaml)"
+      case "${base_name}" in
+        _*) continue ;;
+      esac
+      stale_group_name=""
+      for group_name in "${current_group_names[@]}"; do
+        if [ "${group_name}" = "${base_name}" ]; then
+          stale_group_name="${group_name}"
+          break
+        fi
+      done
+      if [ -z "${stale_group_name}" ]; then
+        rm -f "${file}"
+        stale_count=$((stale_count + 1))
+        log_warn "已删除过期 vmauth entry：${file}"
+      fi
+    done < <(find "${auth_dir}" -maxdepth 1 -name '*.yaml' -print | sort)
+  else
+    local stale_files=0
+    while IFS= read -r file; do
+      base_name="$(basename "${file}" .yaml)"
+      case "${base_name}" in
+        _*) continue ;;
+      esac
+      stale_group_name=""
+      for group_name in "${current_group_names[@]}"; do
+        if [ "${group_name}" = "${base_name}" ]; then
+          stale_group_name="${group_name}"
+          break
+        fi
+      done
+      if [ -z "${stale_group_name}" ]; then
+        stale_files=$((stale_files + 1))
+      fi
+    done < <(find "${auth_dir}" -maxdepth 1 -name '*.yaml' -print | sort)
+    if [ "${stale_files}" -gt 0 ]; then
+      log_warn "发现 ${stale_files} 个过期 vmauth entry 未清理；追加 --prune-stale 可删除"
+    fi
+  fi
+
+  vmauth_generate_auth
+  vmauth_reload
+  local summary="租户认证已同步：${synced_count} 个已更新"
+  if [ "${stale_count}" -gt 0 ]; then
+    summary="${summary}，${stale_count} 个过期 entry 已清理"
+  fi
+  log_ok "${summary}"
+}
+
+sync_oauth_mapping() {
   load_runtime
   kc_get_admin_token
   grafana_sync_oauth_from_keycloak
+}
+
+cmd_sync() {
+  if is_help_arg "${1:-}"; then help_sync; exit 0; fi
+  [ $# -ge 1 ] || { help_sync; exit 1; }
+
+  case "$1" in
+    oauth-mapping)
+      shift
+      if is_help_arg "${1:-}"; then help_sync_oauth_mapping; exit 0; fi
+      [ $# -eq 0 ] || { help_sync_oauth_mapping; exit 1; }
+      sync_oauth_mapping
+      ;;
+    tenant-auth)
+      shift
+      if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_sync_tenant_auth; exit 0; fi
+      local all=false prune_stale=false org_name=""
+      if [ "${1:-}" = "--all" ]; then
+        all=true
+        shift
+      else
+        org_name=$1
+        shift
+      fi
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --prune-stale) prune_stale=true ;;
+          *) help_sync_tenant_auth; exit 1 ;;
+        esac
+        shift
+      done
+
+      load_runtime
+      kc_get_admin_token
+      if [ "${all}" = true ]; then
+        sync_tenant_auth_all "${prune_stale}"
+      else
+        sync_tenant_auth_single "${org_name}"
+      fi
+      ;;
+    all)
+      shift
+      if is_help_arg "${1:-}"; then help_sync; exit 0; fi
+      local prune_stale=false
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          --prune-stale) prune_stale=true ;;
+          *) help_sync; exit 1 ;;
+        esac
+        shift
+      done
+      load_runtime
+      kc_get_admin_token
+      sync_tenant_auth_all "${prune_stale}"
+      sync_oauth_mapping
+      ;;
+    *) help_sync; exit 1 ;;
+  esac
 }
 
 cmd_dashboard_import() {
@@ -947,7 +1181,7 @@ cmd_init() {
   cmd_org_add --main
   cmd_user_add "${GF_ADMIN_USER}" "${GF_ADMIN_PASS}" "${KC_ADMIN_EMAIL}" grafanaAdmin
   cmd_org_user_add org-main "${GF_ADMIN_USER}"
-  cmd_oauth_sync
+  sync_oauth_mapping
   verify_jwt
   print_summary
 }
@@ -996,12 +1230,8 @@ main() {
         *) help_user; exit 1 ;;
       esac
       ;;
-    oauth)
-      if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_oauth; exit 0; fi
-      case "${1:-}" in
-        sync) shift; cmd_oauth_sync "$@" ;;
-        *) help_oauth; exit 1 ;;
-      esac
+    sync)
+      cmd_sync "$@"
       ;;
     dashboard)
       if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_dashboard_import; exit 0; fi
