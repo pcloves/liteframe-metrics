@@ -5,16 +5,22 @@
 #   - https://github.com/VictoriaMetrics/VictoriaMetrics/blob/master/deployment/docker/compose-vm-cluster.yml
 #   - https://docs.victoriametrics.com/guides/grafana-vmauth-openid-configuration/
 
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 30s
+
 services:
   # ============================================================
   # Grafana - 可视化面板
   # ============================================================
   grafana:
-    image: grafana/grafana:12.4.0
-    container_name: grafana-with-keycloak
+    image: grafana/grafana:${GRAFANA_VERSION:-12.4.0}
     restart: unless-stopped
     depends_on:
-      - vmauth
+      vmauth:
+        condition: service_healthy
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
@@ -40,13 +46,15 @@ services:
     volumes:
       - ./grafana/data:/var/lib/grafana/
       - ./grafana/provisioning:/etc/grafana/provisioning/
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
 
   # ============================================================
   # Keycloak - OIDC 身份提供商
   # ============================================================
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.1
-    container_name: keycloak
+    image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.6.1}
     command:
       - start-dev
       - --http-port=3001
@@ -55,104 +63,131 @@ services:
     environment:
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HOSTNAME: http://${HOST_IP}:${KC_PORT:-3001}/
+      KC_HEALTH_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USER:-admin-temporay}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASS}
     volumes:
       - ./keycloak/data:/opt/keycloak/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      start_period: 60s
+      # Source: https://www.keycloak.org/observability/health#_healthcheck
+      test: ["CMD-SHELL", "{ printf 'HEAD /health/ready HTTP/1.0\r\n\r\n' >&0; grep 'HTTP/1.0 200'; } 0<>/dev/tcp/localhost/9000"]
 
   # ============================================================
   # VictoriaMetrics Cluster - 存储节点
   # ============================================================
   vmstorage-1:
-    image: victoriametrics/vmstorage:v1.142.0-cluster
-    container_name: vmstorage-1
+    image: victoriametrics/vmstorage:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     volumes:
       - ./vmstorage-1/data:/storage
     command:
       - --storageDataPath=/storage
       - --retentionPeriod=${VM_RETENTION_PERIOD:-90d}
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8482/health"]
 
   vmstorage-2:
-    image: victoriametrics/vmstorage:v1.142.0-cluster
-    container_name: vmstorage-2
+    image: victoriametrics/vmstorage:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     volumes:
       - ./vmstorage-2/data:/storage
     command:
       - --storageDataPath=/storage
       - --retentionPeriod=${VM_RETENTION_PERIOD:-90d}
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8482/health"]
 
   # ============================================================
   # VictoriaMetrics Cluster - 写入前端
   # ============================================================
   vminsert-1:
-    image: victoriametrics/vminsert:v1.142.0-cluster
-    container_name: vminsert-1
+    image: victoriametrics/vminsert:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     depends_on:
-      - vmstorage-1
-      - vmstorage-2
+      vmstorage-1:
+        condition: service_healthy
+      vmstorage-2:
+        condition: service_healthy
     volumes:
       - ./vminsert-1/data:/data
     command:
       - --storageNode=vmstorage-1:8400
       - --storageNode=vmstorage-2:8400
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8480/health"]
 
   vminsert-2:
-    image: victoriametrics/vminsert:v1.142.0-cluster
-    container_name: vminsert-2
+    image: victoriametrics/vminsert:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     depends_on:
-      - vmstorage-1
-      - vmstorage-2
+      vmstorage-1:
+        condition: service_healthy
+      vmstorage-2:
+        condition: service_healthy
     volumes:
       - ./vminsert-2/data:/data
     command:
       - --storageNode=vmstorage-1:8400
       - --storageNode=vmstorage-2:8400
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8480/health"]
 
   # ============================================================
   # VictoriaMetrics Cluster - 查询前端
   # ============================================================
   vmselect-1:
-    image: victoriametrics/vmselect:v1.142.0-cluster
-    container_name: vmselect-1
+    image: victoriametrics/vmselect:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     depends_on:
-      - vmstorage-1
-      - vmstorage-2
+      vmstorage-1:
+        condition: service_healthy
+      vmstorage-2:
+        condition: service_healthy
     volumes:
       - ./vmselect-1/data:/data
     command:
       - --storageNode=vmstorage-1:8401
       - --storageNode=vmstorage-2:8401
       - --vmalert.proxyURL=http://vmalert:8880
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8481/health"]
 
   vmselect-2:
-    image: victoriametrics/vmselect:v1.142.0-cluster
-    container_name: vmselect-2
+    image: victoriametrics/vmselect:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     depends_on:
-      - vmstorage-1
-      - vmstorage-2
+      vmstorage-1:
+        condition: service_healthy
+      vmstorage-2:
+        condition: service_healthy
     volumes:
       - ./vmselect-2/data:/data
     command:
       - --storageNode=vmstorage-1:8401
       - --storageNode=vmstorage-2:8401
       - --vmalert.proxyURL=http://vmalert:8880
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8481/health"]
 
   # ============================================================
   # vmauth - 统一认证代理（读: JWT/OIDC, 写: Basic Auth）
   # ============================================================
   vmauth:
-    image: victoriametrics/vmauth:v1.142.0
-    container_name: vmauth
+    image: victoriametrics/vmauth:${VICTORIAMETRICS_VERSION:-v1.142.0}
     restart: unless-stopped
     depends_on:
-      - vmselect-1
-      - vmselect-2
+      vmselect-1:
+        condition: service_healthy
+      vmselect-2:
+        condition: service_healthy
     ports:
       - "${VMAUTH_PORT:-8427}:8427"
     volumes:
@@ -160,16 +195,19 @@ services:
       - ./vmauth/data:/data
     command:
       - --auth.config=/etc/auth.yaml
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8427/health"]
 
   # ============================================================
   # vmagent - 指标抓取（采集 VM 集群自身指标）
   # ============================================================
   vmagent:
-    image: victoriametrics/vmagent:v1.142.0
-    container_name: vmagent
+    image: victoriametrics/vmagent:${VICTORIAMETRICS_VERSION:-v1.142.0}
     restart: unless-stopped
     depends_on:
-      - vmauth
+      vmauth:
+        condition: service_healthy
     ports:
       - "${VMAGENT_PORT:-8429}:8429"
     volumes:
@@ -180,16 +218,21 @@ services:
       - --remoteWrite.url=http://vmauth:8427/insert/api/v1/write
       - --remoteWrite.basicAuth.username=vmadmin
       - --remoteWrite.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8429/health"]
 
   # ============================================================
   # vmalert - 告警规则引擎
   # ============================================================
   vmalert:
-    image: victoriametrics/vmalert:v1.142.0
-    container_name: vmalert
+    image: victoriametrics/vmalert:${VICTORIAMETRICS_VERSION:-v1.142.0}
     restart: unless-stopped
     depends_on:
-      - vmauth
+      alertmanager:
+        condition: service_healthy
+      vmauth:
+        condition: service_healthy
     ports:
       - "${VMALERT_PORT:-8880}:8880"
     volumes:
@@ -208,16 +251,21 @@ services:
       - --notifier.url=http://alertmanager:9093/
       - --rule=/etc/alerts/*.yml
       - --external.url=http://${HOST_IP}:${GRAFANA_PORT:-3001}
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8880/health"]
 
   # ============================================================
   # alertmanager - 告警通知
   # ============================================================
   alertmanager:
-    image: prom/alertmanager:v0.28.1
-    container_name: alertmanager-1
+    image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.28.1}
     restart: unless-stopped
     # 不暴露外部端口，内部通过 vmalert 访问
     volumes:
       - ./alertmanager/config:/config
     command:
       - --config.file=/config/alertmanager.yml
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9093/-/ready"]

@@ -1285,9 +1285,7 @@ cmd_init() {
   vmauth_clean_tenant_entries
   vmauth_generate_auth
   compose_up
-  wait_for_keycloak
   kc_setup_base
-  wait_for_grafana
   cmd_org_add --main
   cmd_user_add "${GF_ADMIN_USER}" "${GF_ADMIN_PASS}" "${KC_ADMIN_EMAIL}" grafanaAdmin
   cmd_org_user_add org-main "${GF_ADMIN_USER}"
