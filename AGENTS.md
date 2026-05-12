@@ -50,6 +50,8 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Import platform dashboards into main org | `bash scripts/manage.sh dashboard import --main [--overwrite]` |
 | Import tenant dashboards into all tenant orgs | `bash scripts/manage.sh dashboard import --all-tenants [--overwrite]` |
 
+`bash scripts/manage.sh --help` presents a layered CLI guide, and most scopes support their own `--help` entry points, for example `bash scripts/manage.sh org --help`, `bash scripts/manage.sh org add --help`, `bash scripts/manage.sh org update --help`, `bash scripts/manage.sh user add --help`, and `bash scripts/manage.sh dashboard import --help`.
+
 **Order matters** for new tenants: `bash scripts/manage.sh org add ...` first (creates org + datasource + dashboards), then `bash scripts/manage.sh user add ...`, then `bash scripts/manage.sh org user add ...`.
 
 `user add` is an idempotent upsert for user identity and Grafana role only: it ensures the Keycloak user exists, syncs email/password, and replaces any previous Grafana role group. `viewer` means no `role-*` group, so switching an existing admin/editor user to viewer removes the old role group. Org membership is Keycloak group membership managed separately via `org user add/delete`.

@@ -23,36 +23,334 @@ source "${SCRIPT_DIR}/lib/docker.sh"
 
 log_init
 
+is_help_arg() {
+  case "${1:-}" in
+    help|-h|--help) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 usage() {
+  help_main
+}
+
+help_main() {
   cat <<'EOF'
+CardFrame VM Cluster 管理 CLI
+
 用法：
-  bash scripts/manage.sh init
+  bash scripts/manage.sh <command> [args] [options]
+  bash scripts/manage.sh <command> --help
+
+概览：
+  manage.sh 用于初始化和维护 Grafana + Keycloak + VictoriaMetrics 多租户监控集群。
+  所有操作会输出到终端，并写入 logs/manage-YYYYMMDD.log。
+
+常用流程：
+  初始化完整环境：
+    bash scripts/manage.sh init
+
+  创建租户组织：
+    bash scripts/manage.sh org add org-ztdev 中台
+
+  创建用户并加入租户：
+    bash scripts/manage.sh user add alice passA alice@example.com admin
+    bash scripts/manage.sh org user add org-ztdev alice
+
+  轮换租户 vmauth Basic Auth 密码：
+    bash scripts/manage.sh org update org-ztdev --rotate-password
+
+  导入全部租户 dashboard：
+    bash scripts/manage.sh dashboard import --all-tenants --overwrite
+
+命令分组：
+  init                  初始化 docker compose、Keycloak、Main Org、管理员和 OAuth 映射
+  kc setup              配置 Keycloak realm、Grafana 客户端、角色组和默认管理员
+  org                   管理 Main Org、租户组织、租户元数据和组织成员
+  user                  管理 Keycloak 用户身份和 Grafana 角色组
+  oauth sync            根据 Keycloak group attributes 重建 Grafana OAuth org mapping
+  dashboard import      导入平台或租户 dashboard
+  auth generate         从 vmauth/auth.d 重新生成 vmauth/auth.yaml
+
+关键概念：
+  <org-name>            内部组织名，映射为 Keycloak group，通常形如 org-ztdev
+  <grafana-org-name>    Grafana 组织显示名，可以使用中文，默认必须唯一
+  org-main              固定映射 Grafana 内置 Main Org.（org ID 1）
+  vm-account-id         VictoriaMetrics tenant account ID，保存在 Keycloak group attributes
+  vmauth Basic Auth     每个租户 datasource 使用的 Basic Auth 凭据
+
+更多帮助：
+  bash scripts/manage.sh org --help
+  bash scripts/manage.sh org add --help
+  bash scripts/manage.sh org update --help
+  bash scripts/manage.sh user --help
+  bash scripts/manage.sh dashboard import --help
+EOF
+}
+
+help_kc() {
+  cat <<'EOF'
+Keycloak 管理
+
+用法：
   bash scripts/manage.sh kc setup
+
+命令：
+  setup                 配置 realm、Grafana 客户端、角色组和正式管理员
+
+说明：
+  kc setup 是初始化流程的一部分，通常由 bash scripts/manage.sh init 自动调用。
+  如需单独修复 Keycloak 基础配置，可手动执行该命令。
+EOF
+}
+
+help_org() {
+  cat <<'EOF'
+组织管理
+
+用法：
+  bash scripts/manage.sh org <subcommand> [args] [options]
+
+命令：
+  add                   创建或确保 Main Org / 租户组织存在
+  update                更新已有租户的 Grafana org、vm-account-id 或 vmauth 密码
+  user add              将用户加入 Keycloak 组织 group
+  user delete           将用户移出 Keycloak 组织 group
+
+示例：
   bash scripts/manage.sh org add --main
-  bash scripts/manage.sh org add <org-name> <grafana-org-name> [--vm-account-id <id>] [--vmauth-password <password>] [--allow-duplicate-account-id] [--use-existing-grafana-org]
-  bash scripts/manage.sh org update <org-name> [--grafana-org-name <name>] [--vm-account-id <id>] [--vmauth-password <password>] [--rotate-password] [--allow-duplicate-account-id] [--use-existing-grafana-org]
+  bash scripts/manage.sh org add org-ztdev 中台
+  bash scripts/manage.sh org update org-ztdev --rotate-password
+  bash scripts/manage.sh org user add org-ztdev alice
+
+更多帮助：
+  bash scripts/manage.sh org add --help
+  bash scripts/manage.sh org update --help
+  bash scripts/manage.sh org user --help
+EOF
+}
+
+help_org_add() {
+  cat <<'EOF'
+创建或确保组织
+
+用法：
+  bash scripts/manage.sh org add --main
+  bash scripts/manage.sh org add <org-name> <grafana-org-name> [options]
+
+参数：
+  <org-name>            内部组织名，映射为 Keycloak group；可传 org-ztdev 或 ztdev
+  <grafana-org-name>    Grafana 组织显示名，可以使用中文，默认必须唯一
+
+选项：
+  --vm-account-id <id>              指定 VictoriaMetrics tenant account ID
+  --vmauth-password <password>      指定租户 vmauth Basic Auth 密码
+  --allow-duplicate-account-id      允许复用已被其他 Keycloak group 使用的 vm-account-id
+  --use-existing-grafana-org        绑定到未被其他 Keycloak group 使用的已有 Grafana org
+
+行为：
+  --main 固定确保 Keycloak group org-main 绑定 Grafana 内置 Main Org.（org ID 1）。
+  租户组织会创建或确保 Keycloak group、Grafana org、vmauth auth entry、Grafana datasource 和租户 dashboard。
+  未指定 --vm-account-id 时自动分配下一个可用正整数；0 保留给 org-main。
+  未指定 --vmauth-password 时自动生成，并存入 Keycloak group attributes。
+  已存在的租户只做幂等 ensure；如需修改绑定或密码，请使用 org update。
+
+示例：
+  bash scripts/manage.sh org add --main
+  bash scripts/manage.sh org add org-ztdev 中台
+  bash scripts/manage.sh org add org-test 测试 --vm-account-id 12
+  bash scripts/manage.sh org add org-prod 生产 --vmauth-password 'change-me'
+EOF
+}
+
+help_org_update() {
+  cat <<'EOF'
+更新租户组织元数据
+
+用法：
+  bash scripts/manage.sh org update <org-name> [options]
+
+参数：
+  <org-name>            已存在租户的内部组织名；org update 不用于 org-main
+
+选项：
+  --grafana-org-name <name>         修改当前 Grafana org 名称，或配合 --use-existing-grafana-org 重新绑定
+  --vm-account-id <id>              修改 VictoriaMetrics tenant account ID
+  --vmauth-password <password>      设置新的 vmauth Basic Auth 密码
+  --rotate-password                 自动生成新的 vmauth Basic Auth 密码
+  --allow-duplicate-account-id      允许复用已被其他 Keycloak group 使用的 vm-account-id
+  --use-existing-grafana-org        将租户重新绑定到未被其他 Keycloak group 使用的已有 Grafana org
+
+行为：
+  --grafana-org-name <新名字> 默认只重命名当前 Grafana org，不重写 Keycloak、vmauth、datasource 或 OAuth。
+  --grafana-org-name <已有组织> --use-existing-grafana-org 会更新 grafana_org_id、datasource 和 OAuth mapping。
+  --vm-account-id 会更新 Keycloak group attributes、重写 vmauth auth entry，并 reload vmauth。
+  --vmauth-password 或 --rotate-password 会更新 Keycloak group attributes、vmauth auth entry、vmauth reload 和 Grafana datasource Basic Auth 密码。
+  --vmauth-password 不能与 --rotate-password 同时使用。
+
+示例：
+  bash scripts/manage.sh org update org-ztdev --grafana-org-name 中台研发
+  bash scripts/manage.sh org update org-ztdev --rotate-password
+  bash scripts/manage.sh org update org-ztdev --vm-account-id 21
+  bash scripts/manage.sh org update org-ztdev --vmauth-password 'new-password'
+  bash scripts/manage.sh org update org-ztdev --grafana-org-name 已有组织 --use-existing-grafana-org
+EOF
+}
+
+help_org_user() {
+  cat <<'EOF'
+组织成员管理
+
+用法：
   bash scripts/manage.sh org user add <org-name> <username>
   bash scripts/manage.sh org user delete <org-name> <username>
+
+说明：
+  org user add/delete 只管理 Keycloak group 成员身份，不修改用户的 Grafana 角色。
+  用户角色由 user add <username> <password> <email> <role> 管理。
+
+示例：
+  bash scripts/manage.sh org user add org-ztdev alice
+  bash scripts/manage.sh org user delete org-ztdev alice
+  bash scripts/manage.sh org user add org-main admin
+EOF
+}
+
+help_user() {
+  cat <<'EOF'
+用户管理
+
+用法：
+  bash scripts/manage.sh user <subcommand> [args] [options]
+
+命令：
+  add                   创建或更新用户身份，并替换 Grafana 角色组
+  delete                禁用用户；追加 --force 时永久删除用户
+  groups                列出用户当前 Keycloak group
+
+角色：
+  grafanaAdmin          Grafana server admin；通常用于平台管理员
+  admin                 Grafana org Admin
+  editor                Grafana org Editor
+  viewer                不加入 role-* group，并清理旧 admin/editor/grafanaAdmin 角色组
+
+示例：
+  bash scripts/manage.sh user add alice passA alice@example.com admin
+  bash scripts/manage.sh user groups alice
+  bash scripts/manage.sh user delete alice
+
+更多帮助：
+  bash scripts/manage.sh user add --help
+  bash scripts/manage.sh user delete --help
+  bash scripts/manage.sh user groups --help
+EOF
+}
+
+help_user_add() {
+  cat <<'EOF'
+创建或更新用户
+
+用法：
   bash scripts/manage.sh user add <username> <password> <email> <role>
+
+参数：
+  <username>            Keycloak 用户名
+  <password>            用户密码
+  <email>               用户邮箱
+  <role>                grafanaAdmin、admin、editor 或 viewer
+
+行为：
+  user add 是幂等 upsert：确保用户存在，同步邮箱和密码。
+  每次执行都会替换 Grafana 角色组，避免 admin/editor 等角色叠加。
+  viewer 表示不加入任何 role-* group，并移除旧角色组。
+  组织成员身份请使用 org user add/delete 单独管理。
+
+示例：
+  bash scripts/manage.sh user add alice passA alice@example.com admin
+  bash scripts/manage.sh user add bob passB bob@example.com viewer
+EOF
+}
+
+help_user_delete() {
+  cat <<'EOF'
+删除或禁用用户
+
+用法：
   bash scripts/manage.sh user delete <username> [--force]
+
+选项：
+  --force               永久删除 Keycloak 用户；不加该参数时只禁用用户
+
+示例：
+  bash scripts/manage.sh user delete alice
+  bash scripts/manage.sh user delete alice --force
+EOF
+}
+
+help_user_groups() {
+  cat <<'EOF'
+查看用户 group
+
+用法：
   bash scripts/manage.sh user groups <username>
-  bash scripts/manage.sh oauth sync
+
+说明：
+  输出用户当前所属 Keycloak group，可用于排查组织成员和 Grafana 角色映射。
+
+示例：
+  bash scripts/manage.sh user groups alice
+EOF
+}
+
+help_dashboard_import() {
+  cat <<'EOF'
+导入 dashboard
+
+用法：
   bash scripts/manage.sh dashboard import <org-name> [--grafana-name <name>] [--overwrite]
   bash scripts/manage.sh dashboard import --main [--overwrite]
   bash scripts/manage.sh dashboard import --all-tenants [--overwrite]
-  bash scripts/manage.sh auth generate
 
-角色：
-  grafanaAdmin | admin | editor | viewer
+选项：
+  --grafana-name <name>             指定单个租户的 Grafana org name；不能与 --all-tenants 同用
+  --overwrite                       覆盖已存在的同 UID dashboard
+
+行为：
+  --main 导入 grafana/dashboards/platform/ 到 Grafana Main Org.。
+  <org-name> 导入 grafana/dashboards/tenants/ 到单个租户组织。
+  --all-tenants 根据 Keycloak group attributes 遍历全部租户并导入租户 dashboard。
+  导入前会删除 dashboard __inputs，并将 datasource 统一为 vmauth-cluster。
+
+示例：
+  bash scripts/manage.sh dashboard import --main --overwrite
+  bash scripts/manage.sh dashboard import org-ztdev --grafana-name 中台
+  bash scripts/manage.sh dashboard import --all-tenants --overwrite
+EOF
+}
+
+help_oauth() {
+  cat <<'EOF'
+同步 OAuth 组织映射
+
+用法：
+  bash scripts/manage.sh oauth sync
 
 说明：
-  user add 为幂等操作：创建/更新用户，并替换已有的 Grafana 角色组。
-  org user add/delete 管理 Keycloak group 成员身份，与用户角色分开管理。
-  <org-name> 指 Keycloak group 名称，不是 Grafana 组织名称。
-  <grafana-org-name> 默认不可复用；如确认绑定到未被 Keycloak group 使用的已有 Grafana 组织，请追加 --use-existing-grafana-org。
-  --vm-account-id 未指定时自动分配，默认不可重复；如确认复用，请追加 --allow-duplicate-account-id。
-  --vmauth-password 未指定时自动生成，并存入 Keycloak group attributes。
-  org update 可修改租户的 Grafana 组织、vm-account-id 或 vmauth 密码；--rotate-password 会自动生成新密码。
+  根据 Keycloak group attributes 中的 grafana_org_id 重建 Grafana org_mapping。
+  org add 和部分 org update 操作会自动调用；手动修复映射时可单独执行。
+EOF
+}
+
+help_auth() {
+  cat <<'EOF'
+生成 vmauth 配置
+
+用法：
+  bash scripts/manage.sh auth generate
+
+说明：
+  从 vmauth/auth.d/*.yaml 合并生成 vmauth/auth.yaml。
+  vmauth/auth.yaml 是生成产物，不应手动编辑或提交。
 EOF
 }
 
@@ -61,18 +359,23 @@ load_runtime() {
 }
 
 cmd_auth_generate() {
+  if is_help_arg "${1:-}"; then help_auth; exit 0; fi
+  [ $# -eq 0 ] || { help_auth; exit 1; }
   load_runtime
   vmauth_generate_auth
 }
 
 cmd_kc_setup() {
+  if is_help_arg "${1:-}"; then help_kc; exit 0; fi
+  [ $# -eq 0 ] || { help_kc; exit 1; }
   load_runtime
   require_bootstrap_env
   kc_setup_base
 }
 
 cmd_user_add() {
-  [ $# -eq 4 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_user_add; exit 0; fi
+  [ $# -eq 4 ] || { help_user_add; exit 1; }
   local username=$1 password=$2 email=$3 role=$4
   local role_group_name role_group_id user_id existing_role_group existing_role_group_id
 
@@ -114,7 +417,8 @@ cmd_user_add() {
 }
 
 cmd_org_user_add() {
-  [ $# -eq 2 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_org_user; exit 0; fi
+  [ $# -eq 2 ] || { help_org_user; exit 1; }
   local org_name=$1 username=$2 group_name group_id user_id
 
   load_runtime
@@ -132,7 +436,8 @@ cmd_org_user_add() {
 }
 
 cmd_org_user_delete() {
-  [ $# -eq 2 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_org_user; exit 0; fi
+  [ $# -eq 2 ] || { help_org_user; exit 1; }
   local org_name=$1 username=$2 group_name group_id user_id
 
   load_runtime
@@ -150,7 +455,8 @@ cmd_org_user_delete() {
 }
 
 cmd_user_groups() {
-  [ $# -eq 1 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_user_groups; exit 0; fi
+  [ $# -eq 1 ] || { help_user_groups; exit 1; }
   local username=$1 user_id
 
   load_runtime
@@ -162,12 +468,13 @@ cmd_user_groups() {
 }
 
 cmd_user_delete() {
-  [ $# -ge 1 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_user_delete; exit 0; fi
+  [ $# -ge 1 ] || { help_user_delete; exit 1; }
   local username=$1 force=false user_id
   if [ "${2:-}" = "--force" ]; then
     force=true
   elif [ $# -gt 1 ]; then
-    usage
+    help_user_delete
     exit 1
   fi
 
@@ -188,22 +495,25 @@ cmd_user_delete() {
 }
 
 cmd_oauth_sync() {
+  if is_help_arg "${1:-}"; then help_oauth; exit 0; fi
+  [ $# -eq 0 ] || { help_oauth; exit 1; }
   load_runtime
   kc_get_admin_token
   grafana_sync_oauth_from_keycloak
 }
 
 cmd_dashboard_import() {
-  [ $# -ge 1 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_dashboard_import; exit 0; fi
+  [ $# -ge 1 ] || { help_dashboard_import; exit 1; }
   local is_main=false all_tenants=false org_name grafana_org_name overwrite=false group_name
 
   if [ "$1" = "--main" ]; then
-    [ $# -le 2 ] || { usage; exit 1; }
+    [ $# -le 2 ] || { help_dashboard_import; exit 1; }
     is_main=true
     org_name="main"
     shift
   elif [ "$1" = "--all-tenants" ]; then
-    [ $# -le 2 ] || { usage; exit 1; }
+    [ $# -le 2 ] || { help_dashboard_import; exit 1; }
     all_tenants=true
     shift
   else
@@ -229,7 +539,7 @@ cmd_dashboard_import() {
         overwrite=true
         shift
         ;;
-      *) usage; exit 1 ;;
+      *) help_dashboard_import; exit 1 ;;
     esac
   done
 
@@ -276,13 +586,14 @@ dashboard_import_all_tenants() {
 }
 
 cmd_org_add() {
-  [ $# -ge 1 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_org_add; exit 0; fi
+  [ $# -ge 1 ] || { help_org_add; exit 1; }
   local is_main=false allow_duplicate_account_id=false use_existing_grafana_org=false
   local org_name account_id="" account_id_arg="" grafana_org_name group_name group_id group_json="" org_id="" org_password="" vmauth_password_arg=""
   local account_id_owner="" grafana_org_owner="" existing_account_id="" existing_password="" existing_grafana_org_id="" existing_grafana_org_name="" existing_org_id=""
 
   if [ "$1" = "--main" ]; then
-    [ $# -eq 1 ] || { usage; exit 1; }
+    [ $# -eq 1 ] || { help_org_add; exit 1; }
     is_main=true
     org_name="main"
     account_id_arg="0"
@@ -311,11 +622,11 @@ cmd_org_add() {
           use_existing_grafana_org=true
           shift
           ;;
-        *) usage; exit 1 ;;
+        *) help_org_add; exit 1 ;;
       esac
     done
   else
-    usage
+    help_org_add
     exit 1
   fi
 
@@ -431,7 +742,8 @@ cmd_org_add() {
 }
 
 cmd_org_update() {
-  [ $# -ge 1 ] || { usage; exit 1; }
+  if is_help_arg "${1:-}"; then help_org_update; exit 0; fi
+  [ $# -ge 1 ] || { help_org_update; exit 1; }
   local org_name=$1
   shift
 
@@ -472,7 +784,7 @@ cmd_org_update() {
         use_existing_grafana_org=true
         shift
         ;;
-      *) usage; exit 1 ;;
+      *) help_org_update; exit 1 ;;
     esac
   done
 
@@ -646,25 +958,33 @@ main() {
   shift
 
   case "${scope}" in
-    init) cmd_init "$@" ;;
+    init)
+      if is_help_arg "${1:-}"; then help_main; exit 0; fi
+      [ $# -eq 0 ] || { help_main; exit 1; }
+      cmd_init
+      ;;
     kc)
-      [ "${1:-}" = "setup" ] || { usage; exit 1; }
-      shift
-      cmd_kc_setup "$@"
+      if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_kc; exit 0; fi
+      case "${1:-}" in
+        setup) shift; cmd_kc_setup "$@" ;;
+        *) help_kc; exit 1 ;;
+      esac
       ;;
     org)
       case "${1:-}" in
         add) shift; cmd_org_add "$@" ;;
         update) shift; cmd_org_update "$@" ;;
+        help|-h|--help|"") help_org ;;
         user)
           shift
           case "${1:-}" in
             add) shift; cmd_org_user_add "$@" ;;
             delete) shift; cmd_org_user_delete "$@" ;;
-            *) usage; exit 1 ;;
+            help|-h|--help|"") help_org_user ;;
+            *) help_org_user; exit 1 ;;
           esac
           ;;
-        *) usage; exit 1 ;;
+        *) help_org; exit 1 ;;
       esac
       ;;
     user)
@@ -672,23 +992,30 @@ main() {
         add) shift; cmd_user_add "$@" ;;
         delete) shift; cmd_user_delete "$@" ;;
         groups) shift; cmd_user_groups "$@" ;;
-        *) usage; exit 1 ;;
+        help|-h|--help|"") help_user ;;
+        *) help_user; exit 1 ;;
       esac
       ;;
     oauth)
-      [ "${1:-}" = "sync" ] || { usage; exit 1; }
-      shift
-      cmd_oauth_sync "$@"
+      if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_oauth; exit 0; fi
+      case "${1:-}" in
+        sync) shift; cmd_oauth_sync "$@" ;;
+        *) help_oauth; exit 1 ;;
+      esac
       ;;
     dashboard)
-      [ "${1:-}" = "import" ] || { usage; exit 1; }
-      shift
-      cmd_dashboard_import "$@"
+      if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_dashboard_import; exit 0; fi
+      case "${1:-}" in
+        import) shift; cmd_dashboard_import "$@" ;;
+        *) help_dashboard_import; exit 1 ;;
+      esac
       ;;
     auth)
-      [ "${1:-}" = "generate" ] || { usage; exit 1; }
-      shift
-      cmd_auth_generate "$@"
+      if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_auth; exit 0; fi
+      case "${1:-}" in
+        generate) shift; cmd_auth_generate "$@" ;;
+        *) help_auth; exit 1 ;;
+      esac
       ;;
     help|-h|--help) usage ;;
     *) usage; exit 1 ;;
