@@ -20,6 +20,8 @@ source "${SCRIPT_DIR}/lib/vmauth.sh"
 source "${SCRIPT_DIR}/lib/dashboards.sh"
 # shellcheck source=lib/docker.sh
 source "${SCRIPT_DIR}/lib/docker.sh"
+# shellcheck source=lib/stats.sh
+source "${SCRIPT_DIR}/lib/stats.sh"
 
 log_init
 
@@ -69,6 +71,7 @@ CardFrame VM Cluster 管理 CLI
   org                   管理 Main Org、租户组织、租户元数据和组织成员
   user                  管理 Keycloak 用户身份和 Grafana 角色组
   sync                  从 Keycloak group attributes 同步 OAuth 映射和租户认证配置
+  stats                 查看组织、用户和配置健康状态
   dashboard import      导入平台或租户 dashboard
   auth generate         从 vmauth/auth.d 重新生成 vmauth/auth.yaml
 
@@ -85,6 +88,7 @@ CardFrame VM Cluster 管理 CLI
   bash scripts/manage.sh org update --help
   bash scripts/manage.sh user --help
   bash scripts/manage.sh sync --help
+  bash scripts/manage.sh stats --help
   bash scripts/manage.sh dashboard import --help
 EOF
 }
@@ -300,6 +304,81 @@ help_user_groups() {
 
 示例：
   bash scripts/manage.sh user groups alice
+EOF
+}
+
+help_stats() {
+  cat <<'EOF'
+统计与健康检查
+
+用法：
+  bash scripts/manage.sh stats org [--format table|csv] [--output <file>]
+  bash scripts/manage.sh stats user [--format table|csv] [--output <file>]
+  bash scripts/manage.sh stats health [--format table|csv] [--output <file>]
+
+命令：
+  org                   按组织维度展示 Keycloak group、Grafana org、vmauth entry 和 datasource 状态
+  user                  按用户维度展示角色、组织成员身份和账号状态
+  health                只展示发现的问题；无问题时输出 ok
+
+选项：
+  --format table|csv    输出格式，默认 table
+  --output <file>       将输出写入文件；文件名以 .csv 结尾且未指定 --format 时自动使用 csv
+
+示例：
+  bash scripts/manage.sh stats org
+  bash scripts/manage.sh stats org --format csv --output orgs.csv
+  bash scripts/manage.sh stats user --format csv --output users.csv
+  bash scripts/manage.sh stats health
+EOF
+}
+
+help_stats_org() {
+  cat <<'EOF'
+组织统计
+
+用法：
+  bash scripts/manage.sh stats org [--format table|csv] [--output <file>]
+
+字段：
+  group_name、grafana_org_id、grafana_org_name、vm_account_id、has_vmauth_password
+  vmauth_entry_exists、datasource_exists、member_count、admin_count、editor_count、viewer_count、status
+
+说明：
+  以 Keycloak 组织 group 为主视角，包含 org-main。
+  status 为 ok、incomplete_attributes、missing_grafana_org、missing_vmauth_entry 或 missing_datasource。
+EOF
+}
+
+help_stats_user() {
+  cat <<'EOF'
+用户统计
+
+用法：
+  bash scripts/manage.sh stats user [--format table|csv] [--output <file>]
+
+字段：
+  username、email、enabled、role、grafana_admin、org_count、org_groups、role_groups、other_groups、status
+
+说明：
+  CSV 中多个 group 会放在同一个单元格内，并使用 ; 分隔。
+  role 根据 role-* group 归一化为 grafanaAdmin、admin、editor、viewer 或 conflict。
+EOF
+}
+
+help_stats_health() {
+  cat <<'EOF'
+配置健康检查
+
+用法：
+  bash scripts/manage.sh stats health [--format table|csv] [--output <file>]
+
+字段：
+  scope、object、severity、issue、suggestion
+
+说明：
+  只输出发现的问题；没有问题时输出一行 ok。
+  检查 Keycloak group 元数据、Grafana org 绑定、vmauth entry、datasource、stale auth entry 和用户角色/组织成员异常。
 EOF
 }
 
@@ -555,6 +634,37 @@ cmd_user_delete() {
     log_info "使用 --force 参数可永久删除"
   fi
   log_ok "用户 ${username} 操作完成"
+}
+
+cmd_stats() {
+  if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_stats; exit 0; fi
+  local subcommand=$1
+  shift
+
+  case "${subcommand}" in
+    org)
+      if is_help_arg "${1:-}"; then help_stats_org; exit 0; fi
+      stats_parse_output_args "$@" || { help_stats_org; exit 1; }
+      load_runtime
+      kc_get_admin_token
+      stats_show_org
+      ;;
+    user)
+      if is_help_arg "${1:-}"; then help_stats_user; exit 0; fi
+      stats_parse_output_args "$@" || { help_stats_user; exit 1; }
+      load_runtime
+      kc_get_admin_token
+      stats_show_user
+      ;;
+    health)
+      if is_help_arg "${1:-}"; then help_stats_health; exit 0; fi
+      stats_parse_output_args "$@" || { help_stats_health; exit 1; }
+      load_runtime
+      kc_get_admin_token
+      stats_show_health
+      ;;
+    *) help_stats; exit 1 ;;
+  esac
 }
 
 sync_tenant_auth_group() {
@@ -1232,6 +1342,9 @@ main() {
       ;;
     sync)
       cmd_sync "$@"
+      ;;
+    stats)
+      cmd_stats "$@"
       ;;
     dashboard)
       if [ $# -eq 0 ] || is_help_arg "${1:-}"; then help_dashboard_import; exit 0; fi
