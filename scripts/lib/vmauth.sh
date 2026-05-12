@@ -5,6 +5,10 @@ vmauth_org_password() {
   printf '%s' "${org_name}:${GRAFANA_CLIENT_SECRET}" | sha256sum | cut -c1-20
 }
 
+vmauth_generate_password() {
+  dd if=/dev/urandom bs=32 count=1 2>/dev/null | sha256sum | cut -c1-24
+}
+
 vmauth_write_org_entry() {
   local group_name=$1 account_id=$2 org_password=$3
   local auth_file="vmauth/auth.d/${group_name}.yaml"

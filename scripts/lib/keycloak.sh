@@ -39,6 +39,40 @@ kc_get_group_id() {
   http_get "${KC_URL}/admin/realms/${realm}/groups" "$(kc_admin_header)" | jq -r ".[] | select(.name == \"${group_name}\") | .id // empty"
 }
 
+kc_list_groups_full() {
+  http_get "${KC_URL}/admin/realms/${REALM}/groups?briefRepresentation=false" "$(kc_admin_header)"
+}
+
+kc_get_group_json() {
+  local group_id=$1
+  http_get "${KC_URL}/admin/realms/${REALM}/groups/${group_id}" "$(kc_admin_header)"
+}
+
+kc_group_attribute() {
+  local group_json=$1 attr=$2
+  printf '%s' "${group_json}" | jq -r --arg attr "${attr}" '.attributes[$attr][0] // empty'
+}
+
+kc_find_group_by_account_id() {
+  local account_id=$1 exclude_group_name=${2:-}
+  kc_list_groups_full | jq -r \
+    --arg account_id "${account_id}" \
+    --arg exclude_group_name "${exclude_group_name}" \
+    '[.[] | select(.name != $exclude_group_name) | select((.attributes.metrics_account_id // []) | index($account_id)) | .name][0] // empty'
+}
+
+kc_find_group_by_grafana_org_id() {
+  local grafana_org_id=$1 exclude_group_name=${2:-}
+  kc_list_groups_full | jq -r \
+    --arg grafana_org_id "${grafana_org_id}" \
+    --arg exclude_group_name "${exclude_group_name}" \
+    '[.[] | select(.name != $exclude_group_name) | select((.attributes.grafana_org_id // []) | index($grafana_org_id)) | .name][0] // empty'
+}
+
+kc_next_account_id() {
+  kc_list_groups_full | jq -r '[.[] | .attributes.metrics_account_id[0] // empty | select(test("^[0-9]+$")) | tonumber] | if length == 0 then 1 else (max + 1) end'
+}
+
 kc_ensure_group() {
   local group_name=$1 account_id=${2:-}
   local group_id group_json payload

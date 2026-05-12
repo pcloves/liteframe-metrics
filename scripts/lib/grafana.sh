@@ -76,16 +76,17 @@ grafana_ensure_basic_datasource() {
   local org_id=$1 org_name=$2 group_name=$3 org_password=$4
   local ds_uid="vmauth-cluster" exists result payload
   grafana_switch_org "${org_id}"
+  payload="$(jq -n \
+    --arg name "${ds_uid}" \
+    --arg uid "${ds_uid}" \
+    --arg user "${group_name}" \
+    --arg password "${org_password}" \
+    '{name: $name, uid: $uid, type: "prometheus", url: "http://vmauth:8427/select", access: "proxy", isDefault: true, basicAuth: true, basicAuthUser: $user, secureJsonData: {basicAuthPassword: $password}}')"
   exists="$(curl -sS "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" -H "$(grafana_header)" | jq -r '.uid // empty' 2>/dev/null || true)"
   if [ -n "${exists}" ]; then
-    log_info "数据源 ${ds_uid} 已在组织 ${org_name} 中存在"
+    http_put_json "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" "${payload}" "$(grafana_header)" >/dev/null
+    log_info "已更新组织 ${org_name} 中的数据源 ${ds_uid}"
   else
-    payload="$(jq -n \
-      --arg name "${ds_uid}" \
-      --arg uid "${ds_uid}" \
-      --arg user "${group_name}" \
-      --arg password "${org_password}" \
-      '{name: $name, uid: $uid, type: "prometheus", url: "http://vmauth:8427/select", access: "proxy", isDefault: true, basicAuth: true, basicAuthUser: $user, secureJsonData: {basicAuthPassword: $password}}')"
     result="$(curl -sS -X POST "${GRAFANA_URL}/api/datasources" -H "$(grafana_header)" -H "Content-Type: application/json" -d "${payload}")"
     if printf '%s' "${result}" | jq -e '.datasource.id' >/dev/null 2>&1; then
       log_info "已在组织 ${org_name} 中创建数据源 ${ds_uid}"
@@ -109,6 +110,9 @@ grafana_sync_oauth_from_keycloak() {
     [ -n "${group_id}" ] || continue
     grafana_org_id="$(http_get "${KC_URL}/admin/realms/${REALM}/groups/${group_id}" "$(kc_admin_header)" | jq -r '.attributes.grafana_org_id[0] // empty')"
     [ -n "${grafana_org_id}" ] || continue
+    if [ -n "${kc_org_map[${grafana_org_id}]+set}" ]; then
+      die "Grafana 组织 id=${grafana_org_id} 同时绑定到 Keycloak group ${kc_org_map[${grafana_org_id}]} 和 ${group_name}"
+    fi
     kc_org_map[${grafana_org_id}]="${group_name}"
   done < <(printf '%s' "${kc_groups}" | jq -c '.[]')
 

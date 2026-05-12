@@ -29,7 +29,7 @@ usage() {
   bash scripts/manage.sh init
   bash scripts/manage.sh kc setup
   bash scripts/manage.sh org add --main
-  bash scripts/manage.sh org add <org-name> <account-id> <display-name>
+  bash scripts/manage.sh org add <org-name> <grafana-org-name> [--vm-account-id <id>] [--vmauth-password <password>] [--allow-duplicate-account-id] [--use-existing-grafana-org]
   bash scripts/manage.sh org user add <org-name> <username>
   bash scripts/manage.sh org user delete <org-name> <username>
   bash scripts/manage.sh user add <username> <password> <email> <role>
@@ -47,7 +47,10 @@ usage() {
 说明：
   user add 为幂等操作：创建/更新用户，并替换已有的 Grafana 角色组。
   org user add/delete 管理 Keycloak group 成员身份，与用户角色分开管理。
-  <org-name> 指 Keycloak group 名称，不是 Grafana 组织显示名称。
+  <org-name> 指 Keycloak group 名称，不是 Grafana 组织名称。
+  <grafana-org-name> 默认不可复用；如确认绑定到未被 Keycloak group 使用的已有 Grafana 组织，请追加 --use-existing-grafana-org。
+  --vm-account-id 未指定时自动分配，默认不可重复；如确认复用，请追加 --allow-duplicate-account-id。
+  --vmauth-password 未指定时自动生成，并存入 Keycloak group attributes。
 EOF
 }
 
@@ -117,7 +120,7 @@ cmd_org_user_add() {
 
   group_name="$(kc_group_name_for_org "${org_name}")"
   group_id="$(kc_get_group_id "${group_name}")"
-  [ -n "${group_id}" ] || die "组 ${group_name} 未找到。请运行：bash scripts/manage.sh org add ${org_name} <account-id> <display-name>"
+  [ -n "${group_id}" ] || die "组 ${group_name} 未找到。请运行：bash scripts/manage.sh org add ${org_name} <grafana-org-name>"
   user_id="$(kc_get_user_id "${username}")"
   [ -n "${user_id}" ] || die "用户 ${username} 未找到。请运行：bash scripts/manage.sh user add ${username} <password> <email> <role>"
 
@@ -272,18 +275,43 @@ dashboard_import_all_tenants() {
 
 cmd_org_add() {
   [ $# -ge 1 ] || { usage; exit 1; }
-  local is_main=false org_name account_id display_name group_name group_id org_id grafana_org_name org_password
+  local is_main=false allow_duplicate_account_id=false use_existing_grafana_org=false
+  local org_name account_id="" account_id_arg="" grafana_org_name group_name group_id group_json="" org_id="" org_password="" vmauth_password_arg=""
+  local account_id_owner="" grafana_org_owner="" existing_account_id="" existing_password="" existing_grafana_org_id="" existing_grafana_org_name="" existing_org_id=""
 
   if [ "$1" = "--main" ]; then
+    [ $# -eq 1 ] || { usage; exit 1; }
     is_main=true
     org_name="main"
-    account_id="${2:-0}"
-    require_number account_id "${account_id}"
-  elif [ $# -eq 3 ]; then
+    account_id_arg="0"
+  elif [ $# -ge 2 ]; then
     org_name=$1
-    account_id=$2
-    display_name=$3
-    require_number account_id "${account_id}"
+    grafana_org_name=$2
+    shift 2
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --vm-account-id)
+          [ $# -ge 2 ] || die "--vm-account-id 参数需要提供值"
+          account_id_arg=$2
+          require_number vm-account-id "${account_id_arg}"
+          shift 2
+          ;;
+        --vmauth-password)
+          [ $# -ge 2 ] || die "--vmauth-password 参数需要提供值"
+          vmauth_password_arg=$2
+          shift 2
+          ;;
+        --allow-duplicate-account-id)
+          allow_duplicate_account_id=true
+          shift
+          ;;
+        --use-existing-grafana-org)
+          use_existing_grafana_org=true
+          shift
+          ;;
+        *) usage; exit 1 ;;
+      esac
+    done
   else
     usage
     exit 1
@@ -292,20 +320,87 @@ cmd_org_add() {
   load_runtime
   kc_get_admin_token
   group_name="$(kc_group_name_for_org "${org_name}")"
+  group_id="$(kc_get_group_id "${group_name}")"
+  if [ -n "${group_id}" ]; then
+    group_json="$(kc_get_group_json "${group_id}")"
+    existing_account_id="$(kc_group_attribute "${group_json}" metrics_account_id)"
+    existing_password="$(kc_group_attribute "${group_json}" vmauth_password)"
+    existing_grafana_org_id="$(kc_group_attribute "${group_json}" grafana_org_id)"
+  fi
 
-  log_step "确保 Keycloak group ${group_name} 存在"
-  group_id="$(kc_ensure_group "${group_name}" "${account_id}")"
+  if [ -n "${existing_account_id}" ]; then
+    if [ -n "${account_id_arg}" ] && [ "${account_id_arg}" != "${existing_account_id}" ]; then
+      die "Keycloak group ${group_name} 已绑定 vm-account-id ${existing_account_id}，如需修改请使用 org update。"
+    fi
+    account_id="${existing_account_id}"
+  elif [ -n "${account_id_arg}" ]; then
+    account_id="${account_id_arg}"
+  elif [ "${is_main}" = true ]; then
+    account_id="0"
+  else
+    account_id="$(kc_next_account_id)"
+    log_info "自动分配 vm-account-id=${account_id}"
+  fi
+
+  if [ "${is_main}" != true ]; then
+    account_id_owner="$(kc_find_group_by_account_id "${account_id}" "${group_name}")"
+    if [ -n "${account_id_owner}" ]; then
+      if [ "${allow_duplicate_account_id}" = true ]; then
+        log_warn "account-id ${account_id} 已被 Keycloak group ${account_id_owner} 使用，本次按参数要求继续复用"
+      else
+        die "account-id ${account_id} 已被 Keycloak group ${account_id_owner} 使用。如确认复用，请追加 --allow-duplicate-account-id。"
+      fi
+    fi
+  fi
 
   if [ "${is_main}" = true ]; then
     org_id=1
     grafana_org_name="$(grafana_get_org_name "${org_id}")"
     [ -n "${grafana_org_name}" ] || grafana_org_name="Main Org."
     log_info "使用内置 Grafana 组织 ${grafana_org_name}（id=${org_id}）"
+  elif [ -n "${existing_grafana_org_id}" ]; then
+    existing_grafana_org_name="$(grafana_get_org_name "${existing_grafana_org_id}")"
+    [ -n "${existing_grafana_org_name}" ] || die "Keycloak group ${group_name} 绑定的 Grafana 组织 id=${existing_grafana_org_id} 未找到"
+    [ "${existing_grafana_org_name}" = "${grafana_org_name}" ] || die "Keycloak group ${group_name} 已绑定 Grafana 组织 ${existing_grafana_org_name}，如需修改请使用 org update。"
+    grafana_org_owner="$(kc_find_group_by_grafana_org_id "${existing_grafana_org_id}" "${group_name}")"
+    [ -z "${grafana_org_owner}" ] || die "Grafana 组织 ${grafana_org_name}（id=${existing_grafana_org_id}）已被 Keycloak group ${grafana_org_owner} 绑定。"
+    org_id="${existing_grafana_org_id}"
+    log_info "沿用已绑定 Grafana 组织 ${grafana_org_name}（id=${org_id}）"
   else
-    grafana_org_name="${display_name}"
-    org_id="$(grafana_ensure_org "${grafana_org_name}")"
+    existing_org_id="$(grafana_get_org_id_by_name "${grafana_org_name}")"
+    if [ -n "${existing_org_id}" ]; then
+      grafana_org_owner="$(kc_find_group_by_grafana_org_id "${existing_org_id}" "${group_name}")"
+      [ -z "${grafana_org_owner}" ] || die "Grafana 组织 ${grafana_org_name}（id=${existing_org_id}）已被 Keycloak group ${grafana_org_owner} 绑定。"
+      [ "${use_existing_grafana_org}" = true ] || die "Grafana 组织 ${grafana_org_name} 已存在。如确认绑定到该组织，请追加 --use-existing-grafana-org。"
+      org_id="${existing_org_id}"
+      log_warn "绑定到已有 Grafana 组织 ${grafana_org_name}（id=${org_id}）"
+    else
+      org_id="$(grafana_ensure_org "${grafana_org_name}")"
+    fi
   fi
 
+  if [ -n "${existing_password}" ]; then
+    if [ -n "${vmauth_password_arg}" ] && [ "${vmauth_password_arg}" != "${existing_password}" ]; then
+      die "Keycloak group ${group_name} 已设置 vmauth password，如需修改请使用 org update。"
+    fi
+    org_password="${existing_password}"
+  elif [ -n "${vmauth_password_arg}" ]; then
+    org_password="${vmauth_password_arg}"
+  elif [ -n "${group_id}" ]; then
+    org_password="$(vmauth_org_password "${org_name}")"
+    log_info "沿用 ${group_name} 的旧版 vmauth password，并写入 Keycloak group attributes"
+  else
+    org_password="$(vmauth_generate_password)"
+    log_info "已自动生成 ${group_name} 的 vmauth password"
+  fi
+
+  log_step "确保 Keycloak group ${group_name} 存在"
+  group_id="$(kc_ensure_group "${group_name}")"
+
+  kc_set_group_attribute "${group_id}" metrics_account_id "${account_id}"
+  log_info "已设置组 ${group_name} 的 metrics_account_id=${account_id}"
+  kc_set_group_attribute "${group_id}" vmauth_password "${org_password}"
+  log_info "已设置组 ${group_name} 的 vmauth_password"
   kc_set_group_attribute "${group_id}" grafana_org_id "${org_id}"
   log_info "已设置组 ${group_name} 的 grafana_org_id=${org_id}"
 
@@ -317,7 +412,6 @@ cmd_org_add() {
 
   grafana_ensure_admins_in_org "${org_id}" "${grafana_org_name}"
 
-  org_password="$(vmauth_org_password "${org_name}")"
   vmauth_write_org_entry "${group_name}" "${account_id}" "${org_password}"
   vmauth_generate_auth
   vmauth_reload
@@ -330,6 +424,8 @@ cmd_org_add() {
   fi
   grafana_sync_oauth_from_keycloak
   log_ok "组织 ${grafana_org_name}（${group_name}）已就绪"
+  log_info "vmauth Basic Auth 用户名：${group_name}"
+  log_info "vmauth Basic Auth 密码：${org_password}"
 }
 
 verify_jwt() {
@@ -363,7 +459,7 @@ Grafana OIDC 用户：${GF_ADMIN_USER} / ${GF_ADMIN_PASS}
 Keycloak 管理员：   ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}
 
 添加租户：
-  bash scripts/manage.sh org add org-test 10 测试组织
+  bash scripts/manage.sh org add org-test 测试组织
   bash scripts/manage.sh user add alice passA alice@example.com admin
   bash scripts/manage.sh org user add org-test alice
 EOF

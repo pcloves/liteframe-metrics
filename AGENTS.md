@@ -34,7 +34,7 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 | Full initialization | `bash scripts/manage.sh init` |
 | Setup Keycloak base config | `bash scripts/manage.sh kc setup` |
 | Setup admin org | `bash scripts/manage.sh org add --main` |
-| Add tenant org + group | `bash scripts/manage.sh org add <org-name> <account_id> <display_name>` |
+| Add tenant org + group | `bash scripts/manage.sh org add <org-name> <grafana-org-name> [--vm-account-id <id>] [--vmauth-password <password>] [--allow-duplicate-account-id] [--use-existing-grafana-org]` |
 | Add/update user | `bash scripts/manage.sh user add <username> <password> <email> <role>` (role: admin/editor/viewer/grafanaAdmin; replaces previous Grafana role group) |
 | Add user to org | `bash scripts/manage.sh org user add <org-name> <username>` |
 | Remove user from org | `bash scripts/manage.sh org user delete <org-name> <username>` |
@@ -55,7 +55,9 @@ Each tenant = Keycloak user in `{org}` group + vmauth auth entry + Grafana org. 
 
 All management commands write timestamped logs to `logs/manage-YYYYMMDD.log` and print the same operational progress in the terminal.
 
-**Org naming:** The first parameter `<org-name>` is the internal English name (used for vmauth auth, KC group name, dashboard UID suffix). The third parameter `<display_name>` is the Grafana org display name (can be Chinese). OAuth org mapping uses Grafana org ID (immutable), so renaming the org in Grafana UI won't break auth.
+**Org naming:** The first parameter `<org-name>` is the internal English name (used for vmauth auth, KC group name, dashboard UID suffix). The second parameter `<grafana-org-name>` is the Grafana org name (can be Chinese) and must be unique by default. OAuth org mapping uses Grafana org ID (immutable), so renaming the org in Grafana UI won't break auth.
+
+Tenant `vm-account-id` values are stored in Keycloak group `metrics_account_id` attributes, auto-assigned when omitted, and must be unique by default. Tenant vmauth Basic Auth passwords are stored in Keycloak group `vmauth_password` attributes, auto-generated when omitted, and printed by `org add` after the org is ready. Re-running the same org add command is still idempotent; to intentionally reuse a VM account ID across different org groups, add `--allow-duplicate-account-id`. To bind a new Keycloak group to an existing Grafana org that is not already bound to another group, add `--use-existing-grafana-org`.
 
 **Main Org mapping:** Grafana built-in `Main Org.` (org ID `1`) is fixed to Keycloak group `org-main`. `org add --main` is the only user-facing command that uses `--main`; all membership commands should use the internal group key `org-main`, for example `bash scripts/manage.sh org user add org-main admin`.
 
