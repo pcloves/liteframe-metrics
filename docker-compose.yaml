@@ -24,7 +24,7 @@ services:
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
-      GF_SERVER_ROOT_URL: http://${HOST_IP}:${GRAFANA_PORT:-3001}
+      GF_SERVER_ROOT_URL: http://${HOST_IP}:${GRAFANA_PORT:-3000}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASS:-admin}
       # ---------- OIDC ----------
       GF_AUTH_GENERIC_OAUTH_ENABLED: true
@@ -37,10 +37,10 @@ services:
       GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: full_name
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN: true
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://${HOST_IP}:${KC_PORT:-3002}/realms/${KC_REALM:-grafana}/protocol/openid-connect/auth
-      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://${HOST_IP}:${KC_PORT:-3002}/realms/${KC_REALM:-grafana}/protocol/openid-connect/token
-      GF_AUTH_GENERIC_OAUTH_API_URL: http://${HOST_IP}:${KC_PORT:-3002}/realms/${KC_REALM:-grafana}/protocol/openid-connect/userinfo
-      GF_AUTH_GENERIC_OAUTH_SIGNOUT_REDIRECT_URL: http://${HOST_IP}:${KC_PORT:-3002}/realms/${KC_REALM:-grafana}/protocol/openid-connect/logout?post_logout_redirect_uri=http://${HOST_IP}:${GRAFANA_PORT:-3001}/login
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_SIGNOUT_REDIRECT_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/logout?post_logout_redirect_uri=http://${HOST_IP}:${GRAFANA_PORT:-3000}/login
       # 角色映射: role-grafanaAdmin -> GrafanaAdmin, role-admin -> Admin, role-editor -> Editor, 其他 -> Viewer
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: contains(groups[*], 'role-grafanaAdmin') && 'GrafanaAdmin' || contains(groups[*], 'role-admin') && 'Admin' || contains(groups[*], 'role-editor') && 'Editor' || 'Viewer'
     volumes:
@@ -250,7 +250,7 @@ services:
       - --remoteWrite.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
       - --notifier.url=http://alertmanager:9093/
       - --rule=/etc/alerts/*.yml
-      - --external.url=http://${HOST_IP}:${GRAFANA_PORT:-3001}
+      - --external.url=http://${HOST_IP}:${GRAFANA_PORT:-3000}
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8880/health"]

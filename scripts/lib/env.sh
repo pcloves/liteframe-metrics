@@ -13,7 +13,7 @@ load_env() {
   # shellcheck disable=SC1091
   source .env
 
-  : "${GRAFANA_PORT:=3001}"
+  : "${GRAFANA_PORT:=3000}"
   : "${KC_REALM:=grafana}"
   : "${KC_BOOTSTRAP_ADMIN_USER:=admin-temporay}"
   : "${KC_BOOTSTRAP_ADMIN_PASS:=change_me}"
