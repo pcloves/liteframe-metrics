@@ -17,7 +17,7 @@ vmauth_write_org_entry() {
     --arg username "${group_name}" \
     --arg password "${org_password}" \
     --argjson account_id "${account_id}" \
-    '{username: $username, password: $password, url_map: [{src_paths: ["/select/.*"], drop_src_path_prefix_parts: 1, url_prefix: ["http://vmselect-1:8481/select/\($account_id)/prometheus/", "http://vmselect-2:8481/select/\($account_id)/prometheus/"]}, {src_paths: ["/api/v1/import/prometheus"], url_prefix: ["http://vminsert-1:8480/insert/\($account_id)/prometheus/", "http://vminsert-2:8480/insert/\($account_id)/prometheus/"]}]}' | yq -P > "${auth_file}"
+    '{username: $username, password: $password, url_map: [{src_paths: ["/select/.*"], drop_src_path_prefix_parts: 1, url_prefix: ["http://vmselect-1:8481/select/\($account_id)/prometheus/"]}, {src_paths: ["/api/v1/import/prometheus"], url_prefix: ["http://vminsert-1:8480/insert/\($account_id)/prometheus/"]}]}' | yq -P > "${auth_file}"
   log_info "已写入 ${auth_file}"
 }
 

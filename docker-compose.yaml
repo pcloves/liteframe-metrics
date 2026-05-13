@@ -11,11 +11,66 @@ x-healthcheck-defaults: &healthcheck-defaults
   retries: 12
   start_period: 30s
 
+x-resource-grafana: &resource-grafana
+  cpus: "${GRAFANA_CPUS:-0.50}"
+  mem_limit: "${GRAFANA_MEM_LIMIT:-512m}"
+  mem_reservation: "${GRAFANA_MEM_RESERVATION:-192m}"
+  pids_limit: 512
+
+x-resource-keycloak: &resource-keycloak
+  cpus: "${KEYCLOAK_CPUS:-0.75}"
+  mem_limit: "${KEYCLOAK_MEM_LIMIT:-1g}"
+  mem_reservation: "${KEYCLOAK_MEM_RESERVATION:-384m}"
+  pids_limit: 512
+
+x-resource-vmstorage: &resource-vmstorage
+  cpus: "${VMSTORAGE_CPUS:-0.90}"
+  mem_limit: "${VMSTORAGE_MEM_LIMIT:-1536m}"
+  mem_reservation: "${VMSTORAGE_MEM_RESERVATION:-768m}"
+  pids_limit: 512
+
+x-resource-vminsert: &resource-vminsert
+  cpus: "${VMINSERT_CPUS:-0.35}"
+  mem_limit: "${VMINSERT_MEM_LIMIT:-256m}"
+  mem_reservation: "${VMINSERT_MEM_RESERVATION:-64m}"
+  pids_limit: 256
+
+x-resource-vmselect: &resource-vmselect
+  cpus: "${VMSELECT_CPUS:-0.60}"
+  mem_limit: "${VMSELECT_MEM_LIMIT:-768m}"
+  mem_reservation: "${VMSELECT_MEM_RESERVATION:-256m}"
+  pids_limit: 512
+
+x-resource-vmauth: &resource-vmauth
+  cpus: "${VMAUTH_CPUS:-0.30}"
+  mem_limit: "${VMAUTH_MEM_LIMIT:-256m}"
+  mem_reservation: "${VMAUTH_MEM_RESERVATION:-64m}"
+  pids_limit: 256
+
+x-resource-vmagent: &resource-vmagent
+  cpus: "${VMAGENT_CPUS:-0.40}"
+  mem_limit: "${VMAGENT_MEM_LIMIT:-384m}"
+  mem_reservation: "${VMAGENT_MEM_RESERVATION:-128m}"
+  pids_limit: 256
+
+x-resource-vmalert: &resource-vmalert
+  cpus: "${VMALERT_CPUS:-0.40}"
+  mem_limit: "${VMALERT_MEM_LIMIT:-384m}"
+  mem_reservation: "${VMALERT_MEM_RESERVATION:-128m}"
+  pids_limit: 256
+
+x-resource-alertmanager: &resource-alertmanager
+  cpus: "${ALERTMANAGER_CPUS:-0.20}"
+  mem_limit: "${ALERTMANAGER_MEM_LIMIT:-128m}"
+  mem_reservation: "${ALERTMANAGER_MEM_RESERVATION:-64m}"
+  pids_limit: 128
+
 services:
   # ============================================================
   # Grafana - 可视化面板
   # ============================================================
   grafana:
+    <<: *resource-grafana
     image: grafana/grafana:${GRAFANA_VERSION:-12.4.0}
     restart: unless-stopped
     depends_on:
@@ -54,6 +109,7 @@ services:
   # Keycloak - OIDC 身份提供商
   # ============================================================
   keycloak:
+    <<: *resource-keycloak
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.6.1}
     command:
       - start-dev
@@ -78,6 +134,7 @@ services:
   # VictoriaMetrics Cluster - 存储节点
   # ============================================================
   vmstorage-1:
+    <<: *resource-vmstorage
     image: victoriametrics/vmstorage:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     volumes:
@@ -89,51 +146,20 @@ services:
       <<: *healthcheck-defaults
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8482/health"]
 
-  vmstorage-2:
-    image: victoriametrics/vmstorage:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
-    restart: unless-stopped
-    volumes:
-      - ./vmstorage-2/data:/storage
-    command:
-      - --storageDataPath=/storage
-      - --retentionPeriod=${VM_RETENTION_PERIOD:-90d}
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8482/health"]
-
   # ============================================================
   # VictoriaMetrics Cluster - 写入前端
   # ============================================================
   vminsert-1:
+    <<: *resource-vminsert
     image: victoriametrics/vminsert:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     depends_on:
       vmstorage-1:
-        condition: service_healthy
-      vmstorage-2:
         condition: service_healthy
     volumes:
       - ./vminsert-1/data:/data
     command:
       - --storageNode=vmstorage-1:8400
-      - --storageNode=vmstorage-2:8400
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8480/health"]
-
-  vminsert-2:
-    image: victoriametrics/vminsert:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
-    restart: unless-stopped
-    depends_on:
-      vmstorage-1:
-        condition: service_healthy
-      vmstorage-2:
-        condition: service_healthy
-    volumes:
-      - ./vminsert-2/data:/data
-    command:
-      - --storageNode=vmstorage-1:8400
-      - --storageNode=vmstorage-2:8400
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8480/health"]
@@ -142,36 +168,16 @@ services:
   # VictoriaMetrics Cluster - 查询前端
   # ============================================================
   vmselect-1:
+    <<: *resource-vmselect
     image: victoriametrics/vmselect:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     restart: unless-stopped
     depends_on:
       vmstorage-1:
-        condition: service_healthy
-      vmstorage-2:
         condition: service_healthy
     volumes:
       - ./vmselect-1/data:/data
     command:
       - --storageNode=vmstorage-1:8401
-      - --storageNode=vmstorage-2:8401
-      - --vmalert.proxyURL=http://vmalert:8880
-    healthcheck:
-      <<: *healthcheck-defaults
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8481/health"]
-
-  vmselect-2:
-    image: victoriametrics/vmselect:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
-    restart: unless-stopped
-    depends_on:
-      vmstorage-1:
-        condition: service_healthy
-      vmstorage-2:
-        condition: service_healthy
-    volumes:
-      - ./vmselect-2/data:/data
-    command:
-      - --storageNode=vmstorage-1:8401
-      - --storageNode=vmstorage-2:8401
       - --vmalert.proxyURL=http://vmalert:8880
     healthcheck:
       <<: *healthcheck-defaults
@@ -181,12 +187,11 @@ services:
   # vmauth - 统一认证代理（读: JWT/OIDC, 写: Basic Auth）
   # ============================================================
   vmauth:
+    <<: *resource-vmauth
     image: victoriametrics/vmauth:${VICTORIAMETRICS_VERSION:-v1.142.0}
     restart: unless-stopped
     depends_on:
       vmselect-1:
-        condition: service_healthy
-      vmselect-2:
         condition: service_healthy
     ports:
       - "${VMAUTH_PORT:-8427}:8427"
@@ -203,6 +208,7 @@ services:
   # vmagent - 指标抓取（采集 VM 集群自身指标）
   # ============================================================
   vmagent:
+    <<: *resource-vmagent
     image: victoriametrics/vmagent:${VICTORIAMETRICS_VERSION:-v1.142.0}
     restart: unless-stopped
     depends_on:
@@ -226,6 +232,7 @@ services:
   # vmalert - 告警规则引擎
   # ============================================================
   vmalert:
+    <<: *resource-vmalert
     image: victoriametrics/vmalert:${VICTORIAMETRICS_VERSION:-v1.142.0}
     restart: unless-stopped
     depends_on:
@@ -259,6 +266,7 @@ services:
   # alertmanager - 告警通知
   # ============================================================
   alertmanager:
+    <<: *resource-alertmanager
     image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.28.1}
     restart: unless-stopped
     # 不暴露外部端口，内部通过 vmalert 访问
