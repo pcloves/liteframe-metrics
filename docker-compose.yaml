@@ -72,6 +72,7 @@ services:
   grafana:
     <<: *resource-grafana
     image: grafana/grafana:${GRAFANA_VERSION:-12.4.0}
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     depends_on:
       vmauth:
@@ -100,7 +101,6 @@ services:
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: contains(groups[*], 'role-grafanaAdmin') && 'GrafanaAdmin' || contains(groups[*], 'role-admin') && 'Admin' || contains(groups[*], 'role-editor') && 'Editor' || 'Viewer'
     volumes:
       - ./grafana/data:/var/lib/grafana/
-      - ./grafana/provisioning:/etc/grafana/provisioning/
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
@@ -111,6 +111,7 @@ services:
   keycloak:
     <<: *resource-keycloak
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.6.1}
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     command:
       - start-dev
       - --http-port=3001
@@ -136,6 +137,7 @@ services:
   vmstorage-1:
     <<: *resource-vmstorage
     image: victoriametrics/vmstorage:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     volumes:
       - ./vmstorage-1/data:/storage
@@ -152,6 +154,7 @@ services:
   vminsert-1:
     <<: *resource-vminsert
     image: victoriametrics/vminsert:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     depends_on:
       vmstorage-1:
@@ -170,6 +173,7 @@ services:
   vmselect-1:
     <<: *resource-vmselect
     image: victoriametrics/vmselect:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     depends_on:
       vmstorage-1:
@@ -189,6 +193,7 @@ services:
   vmauth:
     <<: *resource-vmauth
     image: victoriametrics/vmauth:${VICTORIAMETRICS_VERSION:-v1.142.0}
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     depends_on:
       vmselect-1:
@@ -210,6 +215,7 @@ services:
   vmagent:
     <<: *resource-vmagent
     image: victoriametrics/vmagent:${VICTORIAMETRICS_VERSION:-v1.142.0}
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     depends_on:
       vmauth:
@@ -224,6 +230,7 @@ services:
       - --remoteWrite.url=http://vmauth:8427/insert/api/v1/write
       - --remoteWrite.basicAuth.username=vmadmin
       - --remoteWrite.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
+      - --remoteWrite.tmpDataPath=/vmagentdata/remotewrite
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8429/health"]
@@ -234,6 +241,7 @@ services:
   vmalert:
     <<: *resource-vmalert
     image: victoriametrics/vmalert:${VICTORIAMETRICS_VERSION:-v1.142.0}
+    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     depends_on:
       alertmanager:
@@ -246,13 +254,13 @@ services:
       - ./vmalert/rules:/etc/alerts
       - ./vmalert/data:/data
     command:
-      - --datasource.url=http://vmauth:8427/select/0/prometheus
+      - --datasource.url=http://vmauth:8427/select
       - --datasource.basicAuth.username=vmadmin
       - --datasource.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
-      - --remoteRead.url=http://vmauth:8427/select/0/prometheus
+      - --remoteRead.url=http://vmauth:8427/select
       - --remoteRead.basicAuth.username=vmadmin
       - --remoteRead.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
-      - --remoteWrite.url=http://vmauth:8427/insert/0/prometheus
+      - --remoteWrite.url=http://vmauth:8427/insert/api/v1/write
       - --remoteWrite.basicAuth.username=vmadmin
       - --remoteWrite.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
       - --notifier.url=http://alertmanager:9093/

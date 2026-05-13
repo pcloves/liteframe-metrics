@@ -116,7 +116,6 @@ is the only user-facing command that uses `--main`; all membership commands shou
 | `docs/`                             | Architecture doc and Keycloak setup guide (Chinese)                                                                     |
 | `grafana/dashboards/platform/`      | Platform dashboard templates for Main Org (VictoriaMetrics cluster, vmagent, vmalert, vmauth, tenant/query/alert stats) |
 | `grafana/dashboards/tenants/`       | Per-tenant dashboard templates (imported by `scripts/manage.sh dashboard import <org-name>`)                            |
-| `grafana/provisioning/datasources/` | (Not used — datasources created via API by `scripts/manage.sh org add`)                                                 |
 | `vmalert/rules/`                    | Alerting rules (health alerts for VM components)                                                                        |
 | `alertmanager/config/`              | Currently routes to blackhole — configure receiver for real notifications                                               |
 | `vmagent/scrape.yaml`               | Scrapes VM cluster component metrics                                                                                    |
