@@ -106,6 +106,20 @@ stats_grafana_datasource_user() {
     -H "X-Grafana-Org-Id: ${org_id}" | jq -r '.basicAuthUser // empty' 2>/dev/null || true
 }
 
+stats_vmauth_user_exists() {
+  local username=$1
+  [ -f vmauth/auth.yaml ] || return 1
+  yq eval -o=json vmauth/auth.yaml | jq -e --arg username "${username}" '.users[]? | select(.username == $username)' >/dev/null 2>&1
+}
+
+stats_vmauth_usernames_json() {
+  if [ -f vmauth/auth.yaml ]; then
+    yq eval -o=json vmauth/auth.yaml | jq '[.users[]?.username | select(. != "vmadmin")]' 2>/dev/null || printf '[]\n'
+  else
+    printf '[]\n'
+  fi
+}
+
 stats_kc_list_users() {
   http_get "${KC_URL}/admin/realms/${REALM}/users?max=10000" "$(kc_admin_header)"
 }
@@ -156,7 +170,7 @@ stats_org_rows() {
     fi
 
     vmauth_entry_exists="no"
-    [ -f "vmauth/auth.d/${group_name}.yaml" ] && vmauth_entry_exists="yes"
+    stats_vmauth_user_exists "${group_name}" && vmauth_entry_exists="yes"
     datasource_exists="no"
     if [ -n "${grafana_org_id}" ] && [ -n "${grafana_org_name}" ] && stats_grafana_datasource_exists "${grafana_org_id}"; then
       datasource_exists="yes"
@@ -273,7 +287,7 @@ stats_add_health_issue() {
 
 stats_health_rows() {
   local kc_groups grafana_orgs group group_id group_name group_json account_id vmauth_password grafana_org_id grafana_org_name datasource_user
-  local rows_file file base_name users user username status bound_ids_json current_group_names_json org_id org_name
+  local rows_file username users user status bound_ids_json current_group_names_json org_id org_name vmauth_usernames_json
   declare -A seen_org_ids=()
 
   kc_groups="$(kc_list_groups_full)"
@@ -306,8 +320,8 @@ stats_health_rows() {
       stats_add_health_issue "${rows_file}" org "${group_name}" error "grafana_org_id=${grafana_org_id} 对应的 Grafana org 不存在" "运行 org update 重新绑定到有效 Grafana org"
       continue
     fi
-    if [ ! -f "vmauth/auth.d/${group_name}.yaml" ]; then
-      stats_add_health_issue "${rows_file}" org "${group_name}" warn "缺少 vmauth/auth.d/${group_name}.yaml" "运行 sync tenant-auth ${group_name}"
+    if ! stats_vmauth_user_exists "${group_name}"; then
+      stats_add_health_issue "${rows_file}" org "${group_name}" warn "vmauth/auth.yaml 缺少 ${group_name} 认证条目" "运行 sync tenant-auth ${group_name}"
     fi
     if ! stats_grafana_datasource_exists "${grafana_org_id}"; then
       stats_add_health_issue "${rows_file}" org "${group_name}" warn "Grafana org ${grafana_org_name} 缺少 vmauth-cluster datasource" "运行 sync tenant-auth ${group_name}"
@@ -320,15 +334,12 @@ stats_health_rows() {
   done < <(printf '%s' "${kc_groups}" | jq -c '.[]')
 
   current_group_names_json="$(printf '%s' "${kc_groups}" | jq '[.[] | select(.attributes.metrics_account_id[0]? and .attributes.vmauth_password[0]? and .attributes.grafana_org_id[0]?) | .name]')"
-  while IFS= read -r file; do
-    base_name="$(basename "${file}" .yaml)"
-    case "${base_name}" in
-      _*) continue ;;
-    esac
-    if ! jq -e --arg name "${base_name}" 'index($name)' <<< "${current_group_names_json}" >/dev/null; then
-      stats_add_health_issue "${rows_file}" auth "${base_name}" warn "vmauth entry 没有对应的完整 Keycloak 组织 group" "运行 sync tenant-auth --all --prune-stale"
+  vmauth_usernames_json="$(stats_vmauth_usernames_json)"
+  while read -r username; do
+    if ! jq -e --arg name "${username}" 'index($name)' <<< "${current_group_names_json}" >/dev/null; then
+      stats_add_health_issue "${rows_file}" auth "${username}" warn "vmauth/auth.yaml 认证条目没有对应的完整 Keycloak 组织 group" "运行 sync tenant-auth --all"
     fi
-  done < <(find vmauth/auth.d -maxdepth 1 -name '*.yaml' -print | sort)
+  done < <(printf '%s' "${vmauth_usernames_json}" | jq -r '.[]')
 
   bound_ids_json="$(printf '%s' "${kc_groups}" | jq '[.[] | .attributes.grafana_org_id[0]?]')"
   while read -r org; do

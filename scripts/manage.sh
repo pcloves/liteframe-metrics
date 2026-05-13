@@ -73,7 +73,7 @@ CardFrame VM Cluster 管理 CLI
   sync                  从 Keycloak group attributes 同步 OAuth 映射和租户认证配置
   stats                 查看组织、用户和配置健康状态
   dashboard import      导入平台或租户 dashboard
-  auth generate         从 vmauth/auth.d 重新生成 vmauth/auth.yaml
+  auth generate         从模板和 Keycloak 元数据生成 vmauth/auth.yaml
 
 关键概念：
   <org-name>            内部组织名，映射为 Keycloak group，通常形如 org-ztdev
@@ -465,15 +465,14 @@ help_sync_tenant_auth() {
 
 选项：
   --all                 同步所有具备完整组织元数据的 Keycloak group，包含 org-main
-  --prune-stale         删除 vmauth/auth.d 中不再对应当前 Keycloak 组织 group 的过期 entry
+  --prune-stale         已废弃；vmauth/auth.yaml 现在直接由模板和 Keycloak 元数据生成
 
   行为：
   从 Keycloak group attributes 读取 metrics_account_id、vmauth_password、grafana_org_id。
-  重写 vmauth/auth.d/<group>.yaml，重新生成 vmauth/auth.yaml，并 reload vmauth。
+  重新生成 vmauth/auth.yaml，并 reload vmauth。
   更新对应 Grafana org 的 datasource vmauth-cluster（Basic Auth 用户名/密码）。
   --all 不按 group 名称前缀筛选；只按完整组织元数据判定。
-  --prune-stale 只清理过期 vmauth entry，不自动删除 Grafana org 或 datasource。
-  以 `_` 开头的 `vmauth/auth.d/*.yaml` 视为系统保留 entry，不参与清理。
+  vmauth/auth.yaml 是生成产物；租户 entry 不再单独落盘。
 
 示例：
   bash scripts/manage.sh sync tenant-auth org-ztdev
@@ -491,7 +490,8 @@ help_auth() {
   bash scripts/manage.sh auth generate
 
 说明：
-  从 vmauth/auth.d/*.yaml 合并生成 vmauth/auth.yaml。
+  从 vmauth/templates/*.yaml 和 Keycloak group metadata 生成 vmauth/auth.yaml。
+  该命令需要 Keycloak 正式管理员可用。
   vmauth/auth.yaml 是生成产物，不应手动编辑或提交。
 EOF
 }
@@ -504,6 +504,7 @@ cmd_auth_generate() {
   if is_help_arg "${1:-}"; then help_auth; exit 0; fi
   [ $# -eq 0 ] || { help_auth; exit 1; }
   load_runtime
+  kc_get_admin_token
   vmauth_generate_auth
 }
 
@@ -683,7 +684,6 @@ sync_tenant_auth_group() {
   [ -n "${grafana_org_name}" ] || die "Keycloak group ${group_name} 绑定的 Grafana 组织 id=${grafana_org_id} 未找到"
 
   log_info "同步租户认证：${group_name}（Grafana org ${grafana_org_name}，id=${grafana_org_id}，vm-account-id=${account_id}）"
-  vmauth_write_org_entry "${group_name}" "${account_id}" "${vmauth_password}"
   grafana_ensure_basic_datasource "${grafana_org_id}" "${grafana_org_name}" "${group_name}" "${vmauth_password}"
 }
 
@@ -702,8 +702,7 @@ sync_tenant_auth_single() {
 }
 
 sync_tenant_auth_all() {
-  local prune_stale=$1 kc_groups group group_id group_name group_json current_group_names=() synced_count=0 skipped_count=0 stale_count=0
-  local auth_dir="vmauth/auth.d" file base_name stale_group_name
+  local prune_stale=$1 kc_groups group group_id group_name group_json synced_count=0 skipped_count=0
 
   kc_groups="$(kc_list_groups_full)"
 
@@ -716,7 +715,6 @@ sync_tenant_auth_all() {
     group_json="$(kc_get_group_json "${group_id}")"
     if printf '%s' "${group_json}" | jq -e '.attributes.metrics_account_id[0]? and .attributes.vmauth_password[0]? and .attributes.grafana_org_id[0]?' >/dev/null 2>&1; then
       sync_tenant_auth_group "${group_name}" "${group_json}"
-      current_group_names+=("${group_name}")
       synced_count=$((synced_count + 1))
     else
       if printf '%s' "${group_json}" | jq -e '.attributes.metrics_account_id[0]? or .attributes.vmauth_password[0]? or .attributes.grafana_org_id[0]?' >/dev/null 2>&1; then
@@ -731,54 +729,12 @@ sync_tenant_auth_all() {
   done < <(printf '%s' "${kc_groups}" | jq -c '.[]')
 
   if [ "${prune_stale}" = true ]; then
-    mkdir -p "${auth_dir}"
-    while IFS= read -r file; do
-      base_name="$(basename "${file}" .yaml)"
-      case "${base_name}" in
-        _*) continue ;;
-      esac
-      stale_group_name=""
-      for group_name in "${current_group_names[@]}"; do
-        if [ "${group_name}" = "${base_name}" ]; then
-          stale_group_name="${group_name}"
-          break
-        fi
-      done
-      if [ -z "${stale_group_name}" ]; then
-        rm -f "${file}"
-        stale_count=$((stale_count + 1))
-        log_warn "已删除过期 vmauth entry：${file}"
-      fi
-    done < <(find "${auth_dir}" -maxdepth 1 -name '*.yaml' -print | sort)
-  else
-    local stale_files=0
-    while IFS= read -r file; do
-      base_name="$(basename "${file}" .yaml)"
-      case "${base_name}" in
-        _*) continue ;;
-      esac
-      stale_group_name=""
-      for group_name in "${current_group_names[@]}"; do
-        if [ "${group_name}" = "${base_name}" ]; then
-          stale_group_name="${group_name}"
-          break
-        fi
-      done
-      if [ -z "${stale_group_name}" ]; then
-        stale_files=$((stale_files + 1))
-      fi
-    done < <(find "${auth_dir}" -maxdepth 1 -name '*.yaml' -print | sort)
-    if [ "${stale_files}" -gt 0 ]; then
-      log_warn "发现 ${stale_files} 个过期 vmauth entry 未清理；追加 --prune-stale 可删除"
-    fi
+    log_warn "--prune-stale 已废弃：vmauth/auth.yaml 直接由 Keycloak 当前元数据生成，不再保留过期租户 entry"
   fi
 
   vmauth_generate_auth
   vmauth_reload
   local summary="租户认证已同步：${synced_count} 个已更新"
-  if [ "${stale_count}" -gt 0 ]; then
-    summary="${summary}，${stale_count} 个过期 entry 已清理"
-  fi
   log_ok "${summary}"
 }
 
@@ -1069,7 +1025,6 @@ cmd_org_add() {
 
   grafana_ensure_admins_in_org "${org_id}" "${grafana_org_name}"
 
-  vmauth_write_org_entry "${group_name}" "${account_id}" "${org_password}"
   vmauth_generate_auth
   vmauth_reload
 
@@ -1220,7 +1175,6 @@ cmd_org_update() {
   fi
 
   if [ "${account_changed}" = true ] || [ "${password_changed}" = true ]; then
-    vmauth_write_org_entry "${group_name}" "${account_id}" "${org_password}"
     vmauth_generate_auth
     vmauth_reload
   fi
@@ -1282,8 +1236,7 @@ cmd_init() {
   load_runtime
   require_bootstrap_env
 
-  vmauth_clean_tenant_entries
-  vmauth_generate_auth
+  vmauth_generate_internal_auth
   compose_up
   kc_setup_base
   cmd_org_add --main

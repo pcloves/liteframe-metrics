@@ -1,0 +1,24 @@
+# Internal vmadmin routes preserve official VictoriaMetrics cluster URLs.
+# The caller must include accountID where VictoriaMetrics requires it, for example:
+#   /insert/0/prometheus/api/v1/write
+#   /select/0/prometheus/api/v1/query
+#   /delete/0/prometheus/api/v1/admin/tsdb/delete_series
+#
+# vmstorage management APIs such as /snapshot/* and /internal/force_merge live on
+# vmstorage:8482 and are intentionally not exposed through this vmselect/vminsert
+# gateway template. Add a dedicated storage route design if those are needed.
+username: "vmadmin"
+password: "${VMADMIN_PASS}"
+url_map:
+  - src_paths:
+      - "/insert/.*"
+    url_prefix:
+      - "http://vminsert-1:8480/"
+  - src_paths:
+      - "/select/.*"
+      - "/admin/.*"
+      - "/delete/.*"
+      - "/api/v1/status/top_queries"
+      - "/internal/.*"
+    url_prefix:
+      - "http://vmselect-1:8481/"

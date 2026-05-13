@@ -1,0 +1,17 @@
+# Tenant-facing vmauth routes hide VictoriaMetrics accountID from clients.
+# External URL shape:
+#   /insert/<suffix> -> /insert/${VM_ACCOUNT_ID}/<suffix>
+#   /select/<suffix> -> /select/${VM_ACCOUNT_ID}/<suffix>
+username: ""
+password: ""
+url_map:
+  - src_paths:
+      - "/insert/.*"
+    drop_src_path_prefix_parts: 1
+    url_prefix:
+      - "http://vminsert-1:8480/insert/${VM_ACCOUNT_ID}/"
+  - src_paths:
+      - "/select/.*"
+    drop_src_path_prefix_parts: 1
+    url_prefix:
+      - "http://vmselect-1:8481/select/${VM_ACCOUNT_ID}/"

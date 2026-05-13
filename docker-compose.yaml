@@ -227,7 +227,7 @@ services:
       - ./vmagent/data:/vmagentdata
     command:
       - --promscrape.config=/etc/vmagent/config.yaml
-      - --remoteWrite.url=http://vmauth:8427/insert/api/v1/write
+      - --remoteWrite.url=http://vmauth:8427/insert/0/prometheus/api/v1/write
       - --remoteWrite.basicAuth.username=vmadmin
       - --remoteWrite.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
       - --remoteWrite.tmpDataPath=/vmagentdata/remotewrite
@@ -254,13 +254,13 @@ services:
       - ./vmalert/rules:/etc/alerts
       - ./vmalert/data:/data
     command:
-      - --datasource.url=http://vmauth:8427/select
+      - --datasource.url=http://vmauth:8427/select/0/prometheus
       - --datasource.basicAuth.username=vmadmin
       - --datasource.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
-      - --remoteRead.url=http://vmauth:8427/select
+      - --remoteRead.url=http://vmauth:8427/select/0/prometheus
       - --remoteRead.basicAuth.username=vmadmin
       - --remoteRead.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
-      - --remoteWrite.url=http://vmauth:8427/insert/api/v1/write
+      - --remoteWrite.url=http://vmauth:8427/insert/0/prometheus/api/v1/write
       - --remoteWrite.basicAuth.username=vmadmin
       - --remoteWrite.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
       - --notifier.url=http://alertmanager:9093/

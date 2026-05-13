@@ -89,7 +89,7 @@ grafana_ensure_basic_datasource() {
     --arg uid "${ds_uid}" \
     --arg user "${group_name}" \
     --arg password "${org_password}" \
-    '{name: $name, uid: $uid, type: "prometheus", url: "http://vmauth:8427/select", access: "proxy", isDefault: true, basicAuth: true, basicAuthUser: $user, secureJsonData: {basicAuthPassword: $password}}')"
+    '{name: $name, uid: $uid, type: "prometheus", url: "http://vmauth:8427/select/prometheus", access: "proxy", isDefault: true, basicAuth: true, basicAuthUser: $user, secureJsonData: {basicAuthPassword: $password}}')"
   exists="$(curl -sS "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" -H "$(grafana_header)" | jq -r '.uid // empty' 2>/dev/null || true)"
   if [ -n "${exists}" ]; then
     http_put_json "${GRAFANA_URL}/api/datasources/uid/${ds_uid}" "${payload}" "$(grafana_header)" >/dev/null

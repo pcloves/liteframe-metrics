@@ -1,3 +1,0 @@
-# vmauth 主配置模板
-# 由 scripts/manage.sh auth generate 将 auth.d/*.yaml 合并到此文件
-# 不要手动编辑此文件
