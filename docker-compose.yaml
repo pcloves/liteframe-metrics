@@ -111,7 +111,6 @@ services:
   keycloak:
     <<: *resource-keycloak
     image: quay.io/keycloak/keycloak:${KEYCLOAK_VERSION:-26.6.1}
-    user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     command:
       - start-dev
       - --http-port=3001
