@@ -1,5 +1,7 @@
 # 所有服务运行时数据目录
-**/data/
+**/data/*
+!**/data/.gitignore
+!**/data/.gitkeep
 
 # Grafana 运行时
 grafana/plugins/
@@ -13,7 +15,9 @@ vmauth/auth.d/*.yaml
 !vmauth/auth.d/_*.yaml
 
 # 脚本运行日志
-logs/
+logs/*
+!logs/.gitignore
+!logs/.gitkeep
 
 # 操作系统
 Thumbs.db
