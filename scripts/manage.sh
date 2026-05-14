@@ -1237,6 +1237,7 @@ cmd_init() {
   require_bootstrap_env
 
   vmauth_generate_internal_auth
+  prepare_keycloak_data_dir
   compose_up
   kc_setup_base
   cmd_org_add --main
