@@ -78,7 +78,7 @@ stats_join_names() {
 stats_role_from_groups_json() {
   local groups_json=$1 role_groups role_count
   role_groups="$(printf '%s' "${groups_json}" | jq -r '[.[].name | select(startswith("role-"))] | sort | join(";")')"
-  role_count="$(printf '%s' "${role_groups}" | awk -F';' '{ if ($0 == "") print 0; else print NF }')"
+  role_count="$(printf '%s' "${role_groups}" | awk -F';' '{ if ($0 == "") print 0; else print NF } END { if (NR == 0) print 0 }')"
   if [ "${role_count}" -gt 1 ]; then
     printf 'conflict'
   elif [ "${role_groups}" = "role-grafanaAdmin" ]; then
@@ -243,7 +243,7 @@ stats_user_rows() {
     org_groups="$(printf '%s' "${user_groups}" | jq -r --argjson org_names "${org_names_json}" '[.[].name as $name | select($org_names | index($name)) | $name] | sort | join(";")')"
     role_groups="$(printf '%s' "${user_groups}" | jq -r '[.[].name | select(startswith("role-"))] | sort | join(";")')"
     other_groups="$(printf '%s' "${user_groups}" | jq -r --argjson org_names "${org_names_json}" '[.[].name as $name | select((($name | startswith("role-")) | not) and (($org_names | index($name)) | not)) | $name] | sort | join(";")')"
-    org_count="$(printf '%s' "${org_groups}" | awk -F';' '{ if ($0 == "") print 0; else print NF }')"
+    org_count="$(printf '%s' "${org_groups}" | awk -F';' '{ if ($0 == "") print 0; else print NF } END { if (NR == 0) print 0 }')"
     grafana_admin="no"
     [ "${role}" = "grafanaAdmin" ] && grafana_admin="yes"
 
