@@ -122,7 +122,7 @@
             "uid": "vmauth-cluster"
           },
           "editorMode": "builder",
-          "expr": "client{namespace=\"$namespace\", pod=\"$pod\"}",
+          "expr": "client{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "{{type}}",
           "range": true,
           "refId": "A"
@@ -233,7 +233,7 @@
             "uid": "vmauth-cluster"
           },
           "editorMode": "builder",
-          "expr": "server{namespace=\"$namespace\", pod=\"$pod\"}",
+          "expr": "server{namespace=~\"$namespace\", pod=~\"$pod\"}",
           "legendFormat": "server-{{serverId}}",
           "range": true,
           "refId": "A"
@@ -344,7 +344,7 @@
             "uid": "vmauth-cluster"
           },
           "editorMode": "code",
-          "expr": "sum by(id) (increase(rcvMsg{namespace=\"$namespace\", pod=\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by(id) (increase(rcvMsg{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "msg-{{id}}",
           "range": true,
           "refId": "A"
@@ -442,7 +442,7 @@
             "uid": "vmauth-cluster"
           },
           "editorMode": "code",
-          "expr": "sum by(id) (increase(send{namespace=\"$namespace\", pod=\"$pod\"}[$__rate_interval]))",
+          "expr": "sum by(id) (increase(send{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "msg-{{id}}",
           "range": true,
           "refId": "A"
@@ -540,7 +540,7 @@
             "uid": "vmauth-cluster"
           },
           "editorMode": "code",
-          "expr": "sum(rate(rcvMsg{namespace=\"$namespace\", pod=\"$pod\"}[$__rate_interval]))",
+          "expr": "sum(rate(rcvMsg{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "接收总计",
           "range": true,
           "refId": "A"
@@ -551,7 +551,7 @@
             "uid": "vmauth-cluster"
           },
           "editorMode": "code",
-          "expr": "sum(rate(send{namespace=\"$namespace\", pod=\"$pod\"}[$__rate_interval]))",
+          "expr": "sum(rate(send{namespace=~\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
           "legendFormat": "发送总计",
           "range": true,
           "refId": "B"
