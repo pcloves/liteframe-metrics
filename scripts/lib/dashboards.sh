@@ -42,16 +42,16 @@ dashboards_normalize() {
 }
 
 dashboards_import() {
-  local dashboard_set=$1 uid_suffix=$2 grafana_org_name=$3 overwrite=${4:-false}
-  local dashboards_dir org_id dashboard_file dashboard_name tmp_file payload_file base_uid new_uid exists result count=0
+  local dashboard_set=$1 uid_suffix=$2 grafana_org_id=$3 overwrite=${4:-false}
+  local dashboards_dir grafana_org_name dashboard_file dashboard_name tmp_file payload_file base_uid new_uid exists result count=0
 
   dashboards_dir="$(dashboards_dir_for_set "${dashboard_set}")"
   [ -d "${dashboards_dir}" ] || { log_warn "仪表盘目录未找到：${dashboards_dir}"; return 0; }
-  org_id="$(grafana_get_org_id_by_name "${grafana_org_name}")"
-  [ -n "${org_id}" ] || { log_warn "Grafana 组织 ${grafana_org_name} 未找到，跳过仪表盘导入"; return 0; }
+  grafana_org_name="$(grafana_get_org_name "${grafana_org_id}")"
+  [ -n "${grafana_org_name}" ] || { log_warn "Grafana 组织 id=${grafana_org_id} 未找到，跳过仪表盘导入"; return 0; }
 
-  log_step "将 ${dashboard_set} 仪表盘导入到 ${grafana_org_name}（id=${org_id}）"
-  grafana_switch_org "${org_id}"
+  log_step "将 ${dashboard_set} 仪表盘导入到 ${grafana_org_name}（id=${grafana_org_id}）"
+  grafana_switch_org "${grafana_org_id}"
 
   for dashboard_file in "${dashboards_dir}"/*.json; do
     [ -f "${dashboard_file}" ] || continue

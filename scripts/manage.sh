@@ -387,12 +387,11 @@ help_dashboard_import() {
 导入 dashboard
 
 用法：
-  bash scripts/manage.sh dashboard import <org-name> [--grafana-name <name>] [--overwrite]
+  bash scripts/manage.sh dashboard import <org-name> [--overwrite]
   bash scripts/manage.sh dashboard import --main [--overwrite]
   bash scripts/manage.sh dashboard import --all-tenants [--overwrite]
 
 选项：
-  --grafana-name <name>             指定单个租户的 Grafana org name；不能与 --all-tenants 同用
   --overwrite                       覆盖已存在的同 UID dashboard
 
 行为：
@@ -400,10 +399,11 @@ help_dashboard_import() {
   <org-name> 导入 grafana/dashboards/tenants/ 到单个租户组织。
   --all-tenants 根据 Keycloak group attributes 遍历全部租户并导入租户 dashboard。
   导入前会删除 dashboard __inputs，并将 datasource 统一为 vmauth-cluster。
+  <org-name> 通过 Keycloak group attributes 中的 grafana_org_id 定位 Grafana 组织。
 
 示例：
   bash scripts/manage.sh dashboard import --main --overwrite
-  bash scripts/manage.sh dashboard import org-ztdev --grafana-name 中台
+  bash scripts/manage.sh dashboard import org-ztdev --overwrite
   bash scripts/manage.sh dashboard import --all-tenants --overwrite
 EOF
 }
@@ -805,7 +805,7 @@ cmd_sync() {
 cmd_dashboard_import() {
   if is_help_arg "${1:-}"; then help_dashboard_import; exit 0; fi
   [ $# -ge 1 ] || { help_dashboard_import; exit 1; }
-  local is_main=false all_tenants=false org_name grafana_org_name overwrite=false group_name
+  local is_main=false all_tenants=false org_name grafana_org_id overwrite=false group_name
 
   if [ "$1" = "--main" ]; then
     [ $# -le 2 ] || { help_dashboard_import; exit 1; }
@@ -822,19 +822,22 @@ cmd_dashboard_import() {
   fi
 
   load_runtime
+  kc_get_admin_token
+
   if [ "${is_main}" = true ]; then
-    grafana_org_name="$(grafana_get_org_name 1)"
+    grafana_org_id=1
   else
-    grafana_org_name="${org_name}"
+    group_name="$(kc_group_name_for_org "${org_name}")"
+    local group_id group_json
+    group_id="$(kc_get_group_id "${group_name}")"
+    [ -n "${group_id}" ] || die "Keycloak group ${group_name} 未找到。请先运行 org add。"
+    group_json="$(kc_get_group_json "${group_id}")"
+    grafana_org_id="$(printf '%s' "${group_json}" | jq -r '.attributes.grafana_org_id[0] // empty')"
+    [ -n "${grafana_org_id}" ] || die "Keycloak group ${group_name} 缺少 grafana_org_id 属性"
   fi
 
   while [ $# -gt 0 ]; do
     case "$1" in
-      --grafana-name)
-        [ $# -ge 2 ] || die "--grafana-name 参数需要提供值"
-        grafana_org_name=$2
-        shift 2
-        ;;
       --overwrite)
         overwrite=true
         shift
@@ -843,26 +846,20 @@ cmd_dashboard_import() {
     esac
   done
 
-  if [ "${all_tenants}" = true ] && [ -n "${grafana_org_name}" ]; then
-    die "--grafana-name 不能与 --all-tenants 同时使用"
-  fi
-
   if [ "${all_tenants}" = true ]; then
-    kc_get_admin_token
     dashboard_import_all_tenants "${overwrite}"
     return
   fi
 
-  group_name="$(kc_group_name_for_org "${org_name}")"
   if [ "${is_main}" = true ]; then
-    dashboards_import platform "${group_name}" "${grafana_org_name}" "${overwrite}"
+    dashboards_import platform "${group_name}" "${grafana_org_id}" "${overwrite}"
   else
-    dashboards_import tenants "${group_name}" "${grafana_org_name}" "${overwrite}"
+    dashboards_import tenants "${group_name}" "${grafana_org_id}" "${overwrite}"
   fi
 }
 
 dashboard_import_all_tenants() {
-  local overwrite=$1 kc_groups group group_id group_name group_json grafana_org_id grafana_org_name count=0
+  local overwrite=$1 kc_groups group group_id group_name group_json grafana_org_id count=0
   kc_groups="$(http_get "${KC_URL}/admin/realms/${REALM}/groups" "$(kc_admin_header)")"
 
   while read -r group; do
@@ -875,10 +872,8 @@ dashboard_import_all_tenants() {
     group_json="$(http_get "${KC_URL}/admin/realms/${REALM}/groups/${group_id}" "$(kc_admin_header)")"
     grafana_org_id="$(printf '%s' "${group_json}" | jq -r '.attributes.grafana_org_id[0] // empty')"
     [ -n "${grafana_org_id}" ] || continue
-    grafana_org_name="$(grafana_get_org_name "${grafana_org_id}")"
-    [ -n "${grafana_org_name}" ] || { log_warn "Grafana 组织 ID ${grafana_org_id} 未找到，跳过 ${group_name}"; continue; }
 
-    dashboards_import tenants "${group_name}" "${grafana_org_name}" "${overwrite}"
+    dashboards_import tenants "${group_name}" "${grafana_org_id}" "${overwrite}"
     count=$((count + 1))
   done < <(printf '%s' "${kc_groups}" | jq -c '.[]')
 
@@ -1030,9 +1025,9 @@ cmd_org_add() {
 
   grafana_ensure_basic_datasource "${org_id}" "${grafana_org_name}" "${group_name}" "${org_password}"
   if [ "${is_main}" = true ]; then
-    dashboards_import platform "${group_name}" "${grafana_org_name}" false
+    dashboards_import platform "${group_name}" "${org_id}" false
   else
-    dashboards_import tenants "${group_name}" "${grafana_org_name}" false
+    dashboards_import tenants "${group_name}" "${org_id}" false
   fi
   grafana_sync_oauth_from_keycloak
   log_ok "组织 ${grafana_org_name}（${group_name}）已就绪"
