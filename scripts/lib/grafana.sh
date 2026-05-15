@@ -51,7 +51,7 @@ grafana_ensure_admins_in_org() {
   local org_id=$1 org_name=$2
   local members login user_id is_member
   members="$(http_get "${GRAFANA_URL}/api/orgs/${org_id}/users" "$(grafana_header)")"
-  for login in "${GF_ADMIN_USER}" "${KC_ADMIN_EMAIL}"; do
+  for login in "${GF_SECURITY_ADMIN_USER}" "${KC_ADMIN_EMAIL}"; do
     user_id="$(grafana_user_id "${login}")"
     [ -n "${user_id}" ] || continue
     is_member="$(printf '%s' "${members}" | jq ". // [] | any(.userId == ${user_id})")"

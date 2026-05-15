@@ -20,8 +20,10 @@ load_env() {
   : "${KC_ADMIN_USER:=admin}"
   : "${KC_ADMIN_PASS:=admin_pass}"
   : "${KC_ADMIN_EMAIL:=admin@example.com}"
-  : "${GF_ADMIN_USER:=admin}"
-  : "${GF_ADMIN_PASS:=admin}"
+  : "${GF_SECURITY_ADMIN_USER:=admin}"
+  : "${GF_SECURITY_ADMIN_PASSWORD:=admin}"
+  : "${GF_OIDC_ADMIN_USER:=admin}"
+  : "${GF_OIDC_ADMIN_PASS:=admin}"
   : "${VMADMIN_PASS:=vmadmin_pass}"
 
   require_env HOST_IP
@@ -31,7 +33,7 @@ load_env() {
   GRAFANA_URL="http://${HOST_IP}:${GRAFANA_PORT}"
   KC_URL="http://${HOST_IP}:${KC_PORT}"
   REALM="${KC_REALM}"
-  GF_BASIC_AUTH="$(printf '%s' "${GF_ADMIN_USER}:${GF_ADMIN_PASS}" | base64_one_line)"
+  GF_BASIC_AUTH="$(printf '%s' "${GF_SECURITY_ADMIN_USER}:${GF_SECURITY_ADMIN_PASSWORD}" | base64_one_line)"
   SSO_API="${GRAFANA_URL}/api/v1/sso-settings/generic_oauth"
   ROLE_ATTRIBUTE_PATH="contains(groups[*], 'role-grafanaAdmin') && 'GrafanaAdmin' || contains(groups[*], 'role-admin') && 'Admin' || contains(groups[*], 'role-editor') && 'Editor' || 'Viewer'"
 }
@@ -39,6 +41,7 @@ load_env() {
 require_bootstrap_env() {
   require_env KC_BOOTSTRAP_ADMIN_PASS
   require_env KC_ADMIN_PASS
-  require_env GF_ADMIN_PASS
+  require_env GF_SECURITY_ADMIN_PASSWORD
+  require_env GF_OIDC_ADMIN_PASS
   require_env VMADMIN_PASS
 }

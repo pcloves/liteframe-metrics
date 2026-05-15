@@ -12,7 +12,7 @@ Prerequisites on host: `curl`, `jq`, `docker`, **mikefarah/yq** v4.18+ (NOT the 
 ## .env
 
 Required vars: `HOST_IP`, `KC_PORT`, `GRAFANA_PORT`, `KC_REALM`, `KC_BOOTSTRAP_ADMIN_PASS`, `KC_ADMIN_PASS`,
-`GRAFANA_CLIENT_SECRET`, `VMADMIN_PASS`.
+`GF_SECURITY_ADMIN_PASSWORD`, `GF_OIDC_ADMIN_PASS`, `GRAFANA_CLIENT_SECRET`, `VMADMIN_PASS`.
 
 `.env` is gitignored — always check `.env.example` for the canonical list.
 
@@ -147,4 +147,6 @@ Types: `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`, `style`, `ci`
 - Admin user is created via the same flow as tenant users: `scripts/manage.sh org add --main`,
   `scripts/manage.sh user add admin <pass> <email> grafanaAdmin`, then `scripts/manage.sh org user add org-main admin`.
   The `org-main` group maps to `Main Org.` in Grafana, and `role-grafanaAdmin` grants the Grafana server admin role.
+  Note: `GF_SECURITY_ADMIN_USER/PASSWORD` is the Grafana built-in admin (used by scripts for API calls via Basic Auth);
+  `GF_OIDC_ADMIN_USER/PASS` is the Keycloak OIDC admin (used for browser login to Grafana). These are separate credentials.
 - Alertmanager has no receiver configured (routes to `blackhole`). Configure a real receiver before expecting alerts.

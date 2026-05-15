@@ -1198,8 +1198,8 @@ verify_jwt() {
     -d "client_id=grafana" \
     -d "client_secret=${GRAFANA_CLIENT_SECRET}" \
     -d "grant_type=password" \
-    -d "username=${GF_ADMIN_USER}" \
-    -d "password=${GF_ADMIN_PASS}" | jq -r '.access_token // empty')"
+    -d "username=${GF_OIDC_ADMIN_USER}" \
+    -d "password=${GF_OIDC_ADMIN_PASS}" | jq -r '.access_token // empty')"
   if [ -n "${token}" ]; then
     printf '%s' "${token}" | cut -d. -f2 | base64 -d 2>/dev/null | jq '{username: .preferred_username, groups: .groups}' || true
   else
@@ -1216,7 +1216,8 @@ Grafana：  ${GRAFANA_URL}
 Keycloak： ${KC_URL}
 vmauth：   http://${HOST_IP}:${VMAUTH_PORT:-8427}
 
-Grafana OIDC 用户：${GF_ADMIN_USER} / ${GF_ADMIN_PASS}
+Grafana 内置 admin：${GF_SECURITY_ADMIN_USER} / ${GF_SECURITY_ADMIN_PASSWORD}
+Grafana OIDC 用户：${GF_OIDC_ADMIN_USER} / ${GF_OIDC_ADMIN_PASS}
 Keycloak 管理员：   ${KC_ADMIN_USER} / ${KC_ADMIN_PASS}
 
 添加租户：
@@ -1236,8 +1237,8 @@ cmd_init() {
   compose_up
   kc_setup_base
   cmd_org_add --main
-  cmd_user_add "${GF_ADMIN_USER}" "${GF_ADMIN_PASS}" "${KC_ADMIN_EMAIL}" grafanaAdmin
-  cmd_org_user_add org-main "${GF_ADMIN_USER}"
+  cmd_user_add "${GF_OIDC_ADMIN_USER}" "${GF_OIDC_ADMIN_PASS}" "${KC_ADMIN_EMAIL}" grafanaAdmin
+  cmd_org_user_add org-main "${GF_OIDC_ADMIN_USER}"
   sync_oauth_mapping
   verify_jwt
   print_summary
