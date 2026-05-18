@@ -624,8 +624,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Liteframe Gateway",
-  "uid": "gateway",
+  "title": "轻量化框架-Gateway",
+  "uid": "liteframe-gateway",
   "version": 1,
   "weekStart": ""
 }

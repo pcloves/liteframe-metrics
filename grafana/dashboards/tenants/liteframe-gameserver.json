@@ -1324,8 +1324,8 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Liteframe",
-  "uid": "liteframe",
+  "title": "轻量化框架-GameServer",
+  "uid": "liteframe-gameserver",
   "version": 1,
   "weekStart": ""
 }

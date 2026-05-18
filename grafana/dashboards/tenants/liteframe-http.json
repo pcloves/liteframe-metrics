@@ -745,7 +745,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Liteframe HTTP",
+  "title": "轻量化框架-HTTP",
   "uid": "liteframe-http",
   "version": 1,
   "weekStart": ""
