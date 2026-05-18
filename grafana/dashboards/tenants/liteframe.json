@@ -1273,13 +1273,18 @@
         },
         "definition": "label_values(actor_num,namespace)",
         "name": "namespace",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
         "query": {
           "qryType": 1,
           "query": "label_values(actor_num,namespace)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "regexApplyTo": "value",
         "type": "query",
@@ -1291,15 +1296,20 @@
           "type": "prometheus",
           "uid": "vmauth-cluster"
         },
-        "definition": "label_values(actor_num,pod)",
+        "definition": "label_values(actor_num{namespace=\"$namespace\"},pod)",
         "name": "pod",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(actor_num,pod)",
+          "query": "label_values(actor_num{namespace=\"$namespace\"},pod)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "regexApplyTo": "value",
         "type": "query",

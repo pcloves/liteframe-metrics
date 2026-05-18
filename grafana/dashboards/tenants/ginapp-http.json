@@ -671,13 +671,18 @@
         "definition": "label_values(http_requests_total,namespace)",
         "includeAll": true,
         "name": "namespace",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
         "query": {
           "qryType": 1,
           "query": "label_values(http_requests_total,namespace)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "regexApplyTo": "value",
         "type": "query"
@@ -691,13 +696,18 @@
         "definition": "label_values(http_requests_total{namespace=~\"$namespace\"},pod)",
         "includeAll": true,
         "name": "pod",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
         "query": {
           "qryType": 1,
           "query": "label_values(http_requests_total{namespace=~\"$namespace\"},pod)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "regexApplyTo": "value",
         "type": "query"
@@ -711,13 +721,18 @@
         "definition": "label_values(http_requests_total{namespace=~\"$namespace\", pod=~\"$pod\"},service)",
         "includeAll": true,
         "name": "service",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
         "query": {
           "qryType": 1,
           "query": "label_values(http_requests_total{namespace=~\"$namespace\", pod=~\"$pod\"},service)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
-        "refresh": 1,
+        "refresh": 2,
         "regex": "",
         "regexApplyTo": "value",
         "type": "query"
