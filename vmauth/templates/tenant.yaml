@@ -4,6 +4,7 @@
 #   /select/<suffix> -> /select/${VM_ACCOUNT_ID}/<suffix>
 username: ""
 password: ""
+max_concurrent_requests: 5
 url_map:
   - src_paths:
       - "/insert/.*"

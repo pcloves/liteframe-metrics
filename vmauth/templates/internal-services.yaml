@@ -9,6 +9,7 @@
 # gateway template. Add a dedicated storage route design if those are needed.
 username: "vmadmin"
 password: "${VMADMIN_PASS}"
+max_concurrent_requests: 30
 url_map:
   - src_paths:
       - "/insert/.*"
