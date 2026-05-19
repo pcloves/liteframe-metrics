@@ -563,7 +563,7 @@
   ],
   "preload": false,
   "schemaVersion": 42,
-  "tags": [],
+  "tags": ["liteframe", "gateway"],
   "templating": {
     "list": [
       {
