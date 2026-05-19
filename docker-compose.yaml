@@ -80,6 +80,7 @@ services:
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       GF_SERVER_ROOT_URL: http://${HOST_IP}:${GRAFANA_PORT:-3000}
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
@@ -120,6 +121,7 @@ services:
     ports:
       - "${KC_PORT:-3001}:3001"
     environment:
+      TZ: ${TZ:-Asia/Shanghai}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HOSTNAME: http://${HOST_IP}:${KC_PORT:-3001}/
       KC_HEALTH_ENABLED: "true"
@@ -141,6 +143,8 @@ services:
     image: victoriametrics/vmstorage:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./vmstorage-1/data:/storage
     command:
@@ -158,6 +162,8 @@ services:
     image: victoriametrics/vminsert:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     depends_on:
       vmstorage-1:
         condition: service_healthy
@@ -177,6 +183,8 @@ services:
     image: victoriametrics/vmselect:${VICTORIAMETRICS_VERSION:-v1.142.0}-cluster
     user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     depends_on:
       vmstorage-1:
         condition: service_healthy
@@ -197,6 +205,8 @@ services:
     image: victoriametrics/vmauth:${VICTORIAMETRICS_VERSION:-v1.142.0}
     user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     depends_on:
       vmselect-1:
         condition: service_healthy
@@ -219,6 +229,8 @@ services:
     image: victoriametrics/vmagent:${VICTORIAMETRICS_VERSION:-v1.142.0}
     user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     depends_on:
       vmauth:
         condition: service_healthy
@@ -245,6 +257,8 @@ services:
     image: victoriametrics/vmalert:${VICTORIAMETRICS_VERSION:-v1.142.0}
     user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     depends_on:
       alertmanager:
         condition: service_healthy
@@ -279,6 +293,8 @@ services:
     <<: *resource-alertmanager
     image: prom/alertmanager:${ALERTMANAGER_VERSION:-v0.28.1}
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
     # 不暴露外部端口，内部通过 vmalert 访问
     volumes:
       - ./alertmanager/config:/config
