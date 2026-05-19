@@ -64,7 +64,7 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 8,
+        "w": 5,
         "x": 0,
         "y": 1
       },
@@ -107,8 +107,12 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "none"
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
           },
           "mappings": [],
           "thresholds": {
@@ -121,28 +125,76 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "version"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "版本号"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "build_time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "构建时间"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "branch"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "分支"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "go_version"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Go版本"
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 8,
+        "w": 14,
+        "x": 5,
         "y": 1
       },
       "id": 20,
       "options": {
-        "colorMode": "none",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
           "fields": "",
-          "values": false
+          "reducer": [
+            "sum"
+          ],
+          "show": false
         },
-        "textMode": "name"
+        "showHeader": true
       },
       "pluginVersion": "12.4.0",
       "targets": [
@@ -153,13 +205,32 @@
           },
           "editorMode": "code",
           "expr": "build_info{namespace=~\"$namespace\", pod=~\"$pod\", version!=\"\"} == 1",
-          "legendFormat": "{{version}}\n{{build_time}}\n{{branch}}\n{{go_version}}",
-          "range": true,
+          "format": "table",
+          "legendFormat": "__auto",
+          "instant": true,
           "refId": "A"
         }
       ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "hostname": true,
+              "namespace": true,
+              "pod": true,
+              "service": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ],
       "title": "版本信息",
-      "type": "stat"
+      "type": "table"
     },
     {
       "datasource": {
@@ -187,8 +258,8 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 8,
-        "x": 16,
+        "w": 5,
+        "x": 19,
         "y": 1
       },
       "id": 21,
