@@ -71,7 +71,7 @@ services:
   # ============================================================
   grafana:
     <<: *resource-grafana
-    image: grafana/grafana:${GRAFANA_VERSION:-12.4.0}
+    image: grafana/grafana:${GRAFANA_VERSION:-12.4.3-security-02}
     user: "${CONTAINER_USER_ID:-1001}:${CONTAINER_GROUP_ID:-1001}"
     restart: unless-stopped
     depends_on:
