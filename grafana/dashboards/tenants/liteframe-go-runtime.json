@@ -1099,13 +1099,13 @@
           "type": "prometheus",
           "uid": "vmauth-cluster"
         },
-        "definition": "label_values(go_goroutines{namespace=\"$namespace\"},pod)",
+        "definition": "label_values(go_goroutines{namespace=~\"$namespace\"},pod)",
         "includeAll": true,
         "name": "pod",
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(go_goroutines{namespace=\"$namespace\"},pod)",
+          "query": "label_values(go_goroutines{namespace=~\"$namespace\"},pod)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,

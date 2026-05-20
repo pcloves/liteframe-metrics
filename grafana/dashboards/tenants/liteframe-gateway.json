@@ -596,7 +596,7 @@
           "type": "prometheus",
           "uid": "vmauth-cluster"
         },
-        "definition": "label_values(client{namespace=\"$namespace\"},pod)",
+        "definition": "label_values(client{namespace=~\"$namespace\"},pod)",
         "name": "pod",
         "current": {
           "selected": true,
@@ -606,7 +606,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(client{namespace=\"$namespace\"},pod)",
+          "query": "label_values(client{namespace=~\"$namespace\"},pod)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
