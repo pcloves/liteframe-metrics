@@ -593,7 +593,7 @@
           },
           "editorMode": "builder",
           "expr": "actor_queue{namespace=~\"$namespace\", pod=~\"$pod\"}",
-          "legendFormat": "__auto",
+          "legendFormat": "{{actorid}}",
           "range": true,
           "refId": "A"
         }
