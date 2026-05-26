@@ -10,6 +10,9 @@
 username: "vmadmin"
 password: "${VMADMIN_PASS}"
 max_concurrent_requests: 30
+access_log:
+  filters:
+    skip_status_codes: [200, 202, 204]
 url_map:
   - src_paths:
       - "/insert/.*"

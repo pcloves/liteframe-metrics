@@ -217,6 +217,9 @@ services:
       - ./vmauth/data:/data
     command:
       - --auth.config=/etc/auth.yaml
+      - --loggerTimezone=${TZ:-Asia/Shanghai}
+      - --logInvalidAuthTokens
+      - --removeXFFHTTPHeaderValue
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8427/health"]
