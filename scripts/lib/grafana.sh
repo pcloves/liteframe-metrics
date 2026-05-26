@@ -70,7 +70,7 @@ grafana_update_oauth_mapping() {
   local mapping=$1
   local full payload signout_url
   full="$(http_get "${SSO_API}" "$(grafana_header)")"
-  signout_url="${KC_URL}/realms/${REALM}/protocol/openid-connect/logout?post_logout_redirect_uri=${GRAFANA_URL}/login"
+  signout_url="${KC_URL_EXTERNAL}/realms/${REALM}/protocol/openid-connect/logout?post_logout_redirect_uri=${GRAFANA_URL_EXTERNAL}/login"
   payload="$(printf '%s' "${full}" | jq \
     --arg mapping "${mapping}" \
     --arg secret "${GRAFANA_CLIENT_SECRET}" \

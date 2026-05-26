@@ -14,10 +14,13 @@ Prerequisites on host: `curl`, `jq`, `docker`, **mikefarah/yq** v4.18+ (NOT the 
 Required vars: `GRAFANA_HOST_NAME_INTERNAL`, `GRAFANA_HOST_NAME_EXTERNAL`, `GRAFANA_SCHEME_EXTERNAL`,
 `KEYCLOAK_HOST_NAME_INTERNAL`, `KEYCLOAK_HOST_NAME_EXTERNAL`, `KEYCLOAK_SCHEME_EXTERNAL`,
 `VMAUTH_HOST_NAME_INTERNAL`, `VMAUTH_HOST_NAME_EXTERNAL`, `VMAUTH_SCHEME_EXTERNAL`,
-`KC_PORT`, `GRAFANA_PORT`, `KC_REALM`, `KC_BOOTSTRAP_ADMIN_PASS`, `KC_ADMIN_PASS`,
+`KC_PORT`, `GRAFANA_PORT`, `KC_REALM`, `KEYCLOAK_SSL_REQUIRED`, `KC_BOOTSTRAP_ADMIN_PASS`, `KC_ADMIN_PASS`,
 `GF_SECURITY_ADMIN_PASSWORD`, `GF_OIDC_ADMIN_PASS`, `GRAFANA_CLIENT_SECRET`, `VMADMIN_PASS`.
 
 `.env` is gitignored — always check `.env.example` for the canonical list.
+
+For public HTTP-only deployments, set `KEYCLOAK_SSL_REQUIRED=NONE`. When HTTPS is available, prefer a stricter
+realm policy such as `external` or `all`.
 
 `VM_RETENTION_PERIOD` controls VictoriaMetrics storage retention for all `vmstorage-*` nodes and defaults to `90d`.
 Keep the value consistent across storage nodes.

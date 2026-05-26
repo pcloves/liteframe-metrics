@@ -165,7 +165,7 @@ kc_delete_user() {
 
 kc_setup_base() {
   log_step "设置 Keycloak"
-  local bootstrap_token admin_id admin_role_id bootstrap_id realms_json realm_exists client_uuid client_json payload existing_mappers existing_groups exists
+  local bootstrap_token admin_id admin_role_id bootstrap_id realms_json realm_exists realm_json client_uuid client_json payload existing_mappers existing_groups exists
 
   ADMIN_TOKEN="$(kc_token "${KC_ADMIN_USER}" "${KC_ADMIN_PASS}" || true)"
   if [ -z "${ADMIN_TOKEN}" ]; then
@@ -207,17 +207,22 @@ kc_setup_base() {
   realms_json="$(http_get "${KC_URL}/admin/realms" "$(kc_admin_header)")"
   realm_exists="$(printf '%s' "${realms_json}" | jq ". // [] | any(.realm == \"${REALM}\")")"
   if [ "${realm_exists}" != "true" ]; then
-    http_post_json "${KC_URL}/admin/realms" "$(jq -n --arg r "${REALM}" '{realm: $r, enabled: true}')" "$(kc_admin_header)" >/dev/null
+    http_post_json "${KC_URL}/admin/realms" "$(jq -n --arg r "${REALM}" --arg ssl_required "${KEYCLOAK_SSL_REQUIRED}" '{realm: $r, enabled: true, sslRequired: $ssl_required}')" "$(kc_admin_header)" >/dev/null
     log_info "已创建 realm ${REALM}"
   else
     log_info "Realm ${REALM} 已存在"
   fi
 
+  realm_json="$(http_get "${KC_URL}/admin/realms/${REALM}" "$(kc_admin_header)")"
+  payload="$(printf '%s' "${realm_json}" | jq -c --arg ssl_required "${KEYCLOAK_SSL_REQUIRED}" '.sslRequired = $ssl_required')"
+  http_put_json "${KC_URL}/admin/realms/${REALM}" "${payload}" "$(kc_admin_header)" >/dev/null
+  log_info "已同步 realm ${REALM} 的 sslRequired=${KEYCLOAK_SSL_REQUIRED}"
+
   client_uuid="$(http_get "${KC_URL}/admin/realms/${REALM}/clients?clientId=grafana" "$(kc_admin_header)" | jq -r '.[0].id // empty')"
   if [ -z "${client_uuid}" ]; then
     payload="$(jq -n \
-      --arg login_uri "${GRAFANA_URL}/login/generic_oauth" \
-      --arg logout_uri "${GRAFANA_URL}/login" \
+      --arg login_uri "${GRAFANA_URL_EXTERNAL}/login/generic_oauth" \
+      --arg logout_uri "${GRAFANA_URL_EXTERNAL}/login" \
       '{clientId: "grafana", name: "Grafana", protocol: "openid-connect", publicClient: false, authorizationServicesEnabled: true, serviceAccountsEnabled: true, standardFlowEnabled: true, directAccessGrantsEnabled: true, redirectUris: [$login_uri], attributes: {"post.logout.redirect.uris": $logout_uri}}')"
     http_post_json "${KC_URL}/admin/realms/${REALM}/clients" "${payload}" "$(kc_admin_header)" >/dev/null
     client_uuid="$(http_get "${KC_URL}/admin/realms/${REALM}/clients?clientId=grafana" "$(kc_admin_header)" | jq -r '.[0].id // empty')"
@@ -228,8 +233,8 @@ kc_setup_base() {
   client_json="$(http_get "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}" "$(kc_admin_header)")"
   payload="$(printf '%s' "${client_json}" | jq -c \
     --arg secret "${GRAFANA_CLIENT_SECRET}" \
-    --arg login_uri "${GRAFANA_URL}/login/generic_oauth" \
-    --arg logout_uri "${GRAFANA_URL}/login" \
+    --arg login_uri "${GRAFANA_URL_EXTERNAL}/login/generic_oauth" \
+    --arg logout_uri "${GRAFANA_URL_EXTERNAL}/login" \
     '.secret = $secret | .redirectUris = [$login_uri] | .attributes = ((.attributes // {}) + {"post.logout.redirect.uris": $logout_uri})')"
   http_put_json "${KC_URL}/admin/realms/${REALM}/clients/${client_uuid}" "${payload}" "$(kc_admin_header)" >/dev/null
   log_info "已同步 Grafana 客户端"
