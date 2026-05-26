@@ -38,7 +38,7 @@ usage() {
 
 help_main() {
   cat <<'EOF'
-CardFrame VM Cluster 管理 CLI
+LiteFrame VM Cluster 管理 CLI
 
 用法：
   bash scripts/manage.sh <command> [args] [options]

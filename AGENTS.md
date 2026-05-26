@@ -1,4 +1,4 @@
-# CardFrame VM Cluster — AGENTS.md
+# LiteFrame VM Cluster — AGENTS.md
 
 ## Quick start
 
