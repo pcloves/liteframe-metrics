@@ -26,12 +26,22 @@ load_env() {
   : "${GF_OIDC_ADMIN_PASS:=admin}"
   : "${VMADMIN_PASS:=vmadmin_pass}"
 
-  require_env HOST_IP
+  require_env GRAFANA_HOST_NAME_INTERNAL
+  require_env GRAFANA_HOST_NAME_EXTERNAL
+  require_env GRAFANA_SCHEME_EXTERNAL
+  require_env KEYCLOAK_HOST_NAME_INTERNAL
+  require_env KEYCLOAK_HOST_NAME_EXTERNAL
+  require_env KEYCLOAK_SCHEME_EXTERNAL
+  require_env VMAUTH_HOST_NAME_INTERNAL
+  require_env VMAUTH_HOST_NAME_EXTERNAL
+  require_env VMAUTH_SCHEME_EXTERNAL
   require_env KC_PORT
+  require_env GRAFANA_PORT
   require_env GRAFANA_CLIENT_SECRET
 
-  GRAFANA_URL="http://${HOST_IP}:${GRAFANA_PORT}"
-  KC_URL="http://${HOST_IP}:${KC_PORT}"
+  GRAFANA_URL="http://${GRAFANA_HOST_NAME_INTERNAL}:${GRAFANA_PORT}"
+  KC_URL="http://${KEYCLOAK_HOST_NAME_INTERNAL}:${KC_PORT}"
+  VMAUTH_URL="http://${VMAUTH_HOST_NAME_INTERNAL}:${VMAUTH_PORT:-8427}"
   REALM="${KC_REALM}"
   GF_BASIC_AUTH="$(printf '%s' "${GF_SECURITY_ADMIN_USER}:${GF_SECURITY_ADMIN_PASSWORD}" | base64_one_line)"
   SSO_API="${GRAFANA_URL}/api/v1/sso-settings/generic_oauth"

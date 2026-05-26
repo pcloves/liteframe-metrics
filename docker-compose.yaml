@@ -81,7 +81,7 @@ services:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
       TZ: ${TZ:-Asia/Shanghai}
-      GF_SERVER_ROOT_URL: http://${HOST_IP}:${GRAFANA_PORT:-3000}
+      GF_SERVER_ROOT_URL: ${GRAFANA_SCHEME_EXTERNAL:-http}://${GRAFANA_HOST_NAME_EXTERNAL}:${GRAFANA_PORT:-3000}
       GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
       GF_USERS_DEFAULT_LANGUAGE: zh-Hans
@@ -97,10 +97,10 @@ services:
       GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: full_name
       GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
       GF_AUTH_GENERIC_OAUTH_USE_REFRESH_TOKEN: true
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/auth
-      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/token
-      GF_AUTH_GENERIC_OAUTH_API_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/userinfo
-      GF_AUTH_GENERIC_OAUTH_SIGNOUT_REDIRECT_URL: http://${HOST_IP}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/logout?post_logout_redirect_uri=http://${HOST_IP}:${GRAFANA_PORT:-3000}/login
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${KEYCLOAK_SCHEME_EXTERNAL:-http}://${KEYCLOAK_HOST_NAME_EXTERNAL}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://${KEYCLOAK_HOST_NAME_INTERNAL}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://${KEYCLOAK_HOST_NAME_INTERNAL}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_SIGNOUT_REDIRECT_URL: ${KEYCLOAK_SCHEME_EXTERNAL:-http}://${KEYCLOAK_HOST_NAME_EXTERNAL}:${KC_PORT:-3001}/realms/${KC_REALM:-grafana}/protocol/openid-connect/logout?post_logout_redirect_uri=${GRAFANA_SCHEME_EXTERNAL:-http}://${GRAFANA_HOST_NAME_EXTERNAL}:${GRAFANA_PORT:-3000}/login
       # 角色映射: role-grafanaAdmin -> GrafanaAdmin, role-admin -> Admin, role-editor -> Editor, 其他 -> Viewer
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: contains(groups[*], 'role-grafanaAdmin') && 'GrafanaAdmin' || contains(groups[*], 'role-admin') && 'Admin' || contains(groups[*], 'role-editor') && 'Editor' || 'Viewer'
     volumes:
@@ -123,7 +123,7 @@ services:
     environment:
       TZ: ${TZ:-Asia/Shanghai}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
-      KC_HOSTNAME: http://${HOST_IP}:${KC_PORT:-3001}/
+      KC_HOSTNAME: ${KEYCLOAK_SCHEME_EXTERNAL:-http}://${KEYCLOAK_HOST_NAME_EXTERNAL}:${KC_PORT:-3001}/
       KC_HEALTH_ENABLED: "true"
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USER:-admin-temporay}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASS}
@@ -281,7 +281,7 @@ services:
       - --remoteWrite.basicAuth.password=${VMADMIN_PASS:-vmadmin_pass}
       - --notifier.url=http://alertmanager:9093/
       - --rule=/etc/alerts/*.yml
-      - --external.url=http://${HOST_IP}:${GRAFANA_PORT:-3000}
+      - --external.url=${GRAFANA_SCHEME_EXTERNAL:-http}://${GRAFANA_HOST_NAME_EXTERNAL}:${GRAFANA_PORT:-3000}
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8880/health"]

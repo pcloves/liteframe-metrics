@@ -1208,13 +1208,17 @@ verify_jwt() {
 }
 
 print_summary() {
+  : "${VMAUTH_PORT:=8427}"
   cat <<EOF
 
 部署完成。
 
-Grafana：  ${GRAFANA_URL}
-Keycloak： ${KC_URL}
-vmauth：   http://${HOST_IP}:${VMAUTH_PORT:-8427}
+Grafana（内网）：  http://${GRAFANA_HOST_NAME_INTERNAL}:${GRAFANA_PORT}
+Grafana（外网）：  ${GRAFANA_SCHEME_EXTERNAL}://${GRAFANA_HOST_NAME_EXTERNAL}:${GRAFANA_PORT}
+Keycloak（内网）： http://${KEYCLOAK_HOST_NAME_INTERNAL}:${KC_PORT}
+Keycloak（外网）： ${KEYCLOAK_SCHEME_EXTERNAL}://${KEYCLOAK_HOST_NAME_EXTERNAL}:${KC_PORT}
+vmauth（内网）：   http://${VMAUTH_HOST_NAME_INTERNAL}:${VMAUTH_PORT}
+vmauth（外网）：   ${VMAUTH_SCHEME_EXTERNAL}://${VMAUTH_HOST_NAME_EXTERNAL}:${VMAUTH_PORT}
 
 Grafana 内置 admin：${GF_SECURITY_ADMIN_USER} / ${GF_SECURITY_ADMIN_PASSWORD}
 Grafana OIDC 用户：${GF_OIDC_ADMIN_USER} / ${GF_OIDC_ADMIN_PASS}

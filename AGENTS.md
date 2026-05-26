@@ -3,7 +3,7 @@
 ## Quick start
 
 ```bash
-cp .env.example .env     # edit HOST_IP, GRAFANA_CLIENT_SECRET, etc.
+cp .env.example .env     # edit GRAFANA_HOST_NAME_*, KEYCLOAK_HOST_NAME_*, VMAUTH_HOST_NAME_*, GRAFANA_CLIENT_SECRET, etc.
 bash init.sh              # scripts/manage.sh init: auth generate → compose up → kc setup → main org/user → sync oauth-mapping
 ```
 
@@ -11,7 +11,10 @@ Prerequisites on host: `curl`, `jq`, `docker`, **mikefarah/yq** v4.18+ (NOT the 
 
 ## .env
 
-Required vars: `HOST_IP`, `KC_PORT`, `GRAFANA_PORT`, `KC_REALM`, `KC_BOOTSTRAP_ADMIN_PASS`, `KC_ADMIN_PASS`,
+Required vars: `GRAFANA_HOST_NAME_INTERNAL`, `GRAFANA_HOST_NAME_EXTERNAL`, `GRAFANA_SCHEME_EXTERNAL`,
+`KEYCLOAK_HOST_NAME_INTERNAL`, `KEYCLOAK_HOST_NAME_EXTERNAL`, `KEYCLOAK_SCHEME_EXTERNAL`,
+`VMAUTH_HOST_NAME_INTERNAL`, `VMAUTH_HOST_NAME_EXTERNAL`, `VMAUTH_SCHEME_EXTERNAL`,
+`KC_PORT`, `GRAFANA_PORT`, `KC_REALM`, `KC_BOOTSTRAP_ADMIN_PASS`, `KC_ADMIN_PASS`,
 `GF_SECURITY_ADMIN_PASSWORD`, `GF_OIDC_ADMIN_PASS`, `GRAFANA_CLIENT_SECRET`, `VMADMIN_PASS`.
 
 `.env` is gitignored — always check `.env.example` for the canonical list.
